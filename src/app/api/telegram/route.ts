@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { todos, projects } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { analyzeMessage } from "@/lib/llm";
-import { sendMessage, isAuthorizedUser } from "@/lib/telegram";
+import { sendMessage, isAuthorizedUser, esc } from "@/lib/telegram";
 
 interface TelegramUpdate {
   message?: {
@@ -50,15 +50,15 @@ async function handleList(chatId: number, projectFilter?: string | null) {
     grouped[key].push(todo);
   }
 
-  let message = `📋 할일 ${result.length}개\n`;
+  let message = esc(`📋 할일 ${result.length}개`) + "\n";
   let index = 1;
   for (const [project, items] of Object.entries(grouped)) {
-    message += `\n*${project}* (${items.length})\n`;
+    message += `\n*${esc(project)}* \\(${items.length}\\)\n`;
     for (const item of items) {
       const deadlineStr = item.deadline
-        ? ` ⚠️ ${item.deadline.toISOString().split("T")[0]}`
+        ? ` ⚠️ ${esc(item.deadline.toISOString().split("T")[0])}`
         : "";
-      message += ` ${index}. ${item.title}${deadlineStr}\n`;
+      message += ` ${index}\\. ${esc(item.title)}${deadlineStr}\n`;
       index++;
     }
   }
@@ -77,7 +77,7 @@ async function handleComplete(chatId: number, target: string) {
 
   if (!isNaN(num)) {
     if (num < 1 || num > pendingTodos.length) {
-      await sendMessage(chatId, `${num}번 할일이 없어요.`);
+      await sendMessage(chatId, esc(`${num}번 할일이 없어요.`));
       return;
     }
 
@@ -89,7 +89,7 @@ async function handleComplete(chatId: number, target: string) {
 
     await sendMessage(
       chatId,
-      `✓ ${todo.title} 완료!\n남은 할일 ${pendingTodos.length - 1}개`
+      `✓ ${esc(todo.title)} 완료\\!\n${esc(`남은 할일 ${pendingTodos.length - 1}개`)}`
     );
     return;
   }
@@ -105,10 +105,10 @@ async function handleComplete(chatId: number, target: string) {
 
     await sendMessage(
       chatId,
-      `✓ ${matched.title} 완료!\n남은 할일 ${pendingTodos.length - 1}개`
+      `✓ ${esc(matched.title)} 완료\\!\n${esc(`남은 할일 ${pendingTodos.length - 1}개`)}`
     );
   } else {
-    await sendMessage(chatId, `"${target}"에 해당하는 할일을 못 찾았어요.`);
+    await sendMessage(chatId, esc(`"${target}"에 해당하는 할일을 못 찾았어요.`));
   }
 }
 
@@ -140,7 +140,7 @@ async function handleAdd(
   });
 
   const projectLabel = todo.projectName || "미분류";
-  await sendMessage(chatId, `${projectLabel} > ${todo.title}\n추가했어요`);
+  await sendMessage(chatId, `${esc(projectLabel)} \\> ${esc(todo.title)}\n${esc("추가했어요")}`);
 }
 
 export async function POST(request: NextRequest) {
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
   const text = message.text.trim();
 
   if (!isAuthorizedUser(chatId)) {
-    await sendMessage(chatId, "인증되지 않은 사용자입니다.");
+    await sendMessage(chatId, esc("인증되지 않은 사용자입니다."));
     return NextResponse.json({ ok: true });
   }
 
@@ -184,16 +184,16 @@ export async function POST(request: NextRequest) {
             .where(eq(projects.name, analysis.project.name))
             .limit(1);
           if (existing.length > 0) {
-            await sendMessage(chatId, `"${analysis.project.name}" 프로젝트는 이미 있어요.`);
+            await sendMessage(chatId, esc(`"${analysis.project.name}" 프로젝트는 이미 있어요.`));
           } else {
             await db.insert(projects).values({
               name: analysis.project.name,
               aliases: analysis.project.aliases || [],
             });
             const aliasStr = analysis.project.aliases.length > 0
-              ? ` (alias: ${analysis.project.aliases.join(", ")})`
+              ? ` \\(alias: ${esc(analysis.project.aliases.join(", "))}\\)`
               : "";
-            await sendMessage(chatId, `📁 ${analysis.project.name}${aliasStr}\n프로젝트 추가했어요`);
+            await sendMessage(chatId, `📁 ${esc(analysis.project.name)}${aliasStr}\n${esc("프로젝트 추가했어요")}`);
           }
         }
         break;
@@ -202,10 +202,10 @@ export async function POST(request: NextRequest) {
         if (allProjects.length === 0) {
           await sendMessage(chatId, "등록된 프로젝트가 없어요.");
         } else {
-          let msg = `📁 프로젝트 ${allProjects.length}개\n\n`;
+          let msg = esc(`📁 프로젝트 ${allProjects.length}개`) + "\n\n";
           for (const p of allProjects) {
-            const aliasStr = p.aliases.length > 0 ? ` (${p.aliases.join(", ")})` : "";
-            msg += `• ${p.name}${aliasStr}\n`;
+            const aliasStr = p.aliases.length > 0 ? ` \\(${esc(p.aliases.join(", "))}\\)` : "";
+            msg += `• ${esc(p.name)}${aliasStr}\n`;
           }
           await sendMessage(chatId, msg);
         }
@@ -220,9 +220,9 @@ export async function POST(request: NextRequest) {
             .limit(1);
           if (target.length > 0) {
             await db.delete(projects).where(eq(projects.id, target[0].id));
-            await sendMessage(chatId, `🗑 ${target[0].name} 프로젝트 삭제했어요`);
+            await sendMessage(chatId, `🗑 ${esc(target[0].name)} ${esc("프로젝트 삭제했어요")}`);
           } else {
-            await sendMessage(chatId, `"${analysis.deleteTarget}" 프로젝트를 못 찾았어요.`);
+            await sendMessage(chatId, esc(`"${analysis.deleteTarget}" 프로젝트를 못 찾았어요.`));
           }
         }
         break;
@@ -238,16 +238,16 @@ export async function POST(request: NextRequest) {
           if (!isNaN(num) && num >= 1 && num <= pendingTodos.length) {
             const todo = pendingTodos[num - 1];
             await db.delete(todos).where(eq(todos.id, todo.id));
-            await sendMessage(chatId, `🗑 ${todo.title} 삭제했어요`);
+            await sendMessage(chatId, `🗑 ${esc(todo.title)} ${esc("삭제했어요")}`);
           } else {
             const matched = pendingTodos.find((t) =>
               t.title.toLowerCase().includes(analysis.deleteTarget!.toLowerCase())
             );
             if (matched) {
               await db.delete(todos).where(eq(todos.id, matched.id));
-              await sendMessage(chatId, `🗑 ${matched.title} 삭제했어요`);
+              await sendMessage(chatId, `🗑 ${esc(matched.title)} ${esc("삭제했어요")}`);
             } else {
-              await sendMessage(chatId, `"${analysis.deleteTarget}"에 해당하는 할일을 못 찾았어요.`);
+              await sendMessage(chatId, esc(`"${analysis.deleteTarget}"에 해당하는 할일을 못 찾았어요.`));
             }
           }
         }
@@ -255,12 +255,12 @@ export async function POST(request: NextRequest) {
       case "chat":
       case "question":
       case "edit":
-        await sendMessage(chatId, analysis.reply || "네, 알겠어요!");
+        await sendMessage(chatId, esc(analysis.reply || "네, 알겠어요!"));
         break;
     }
   } catch (error) {
     console.error("Error processing message:", error);
-    await sendMessage(chatId, "처리 중 오류가 발생했어요. 다시 시도해주세요.");
+    await sendMessage(chatId, esc("처리 중 오류가 발생했어요. 다시 시도해주세요."));
   }
 
   return NextResponse.json({ ok: true });

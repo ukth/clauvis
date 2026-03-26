@@ -1,15 +1,19 @@
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
 
 export async function sendMessage(chatId: number, text: string) {
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
+  const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
       text,
-      parse_mode: "Markdown",
     }),
   });
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.error("Telegram sendMessage failed:", res.status, body);
+  }
 }
 
 export function isAuthorizedUser(chatId: number): boolean {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { todos, projects } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { parseNaturalLanguage } from "@/lib/llm";
+import { analyzeMessage } from "@/lib/llm";
 import { sendMessage, isAuthorizedUser } from "@/lib/telegram";
 
 interface TelegramUpdate {
@@ -12,7 +12,7 @@ interface TelegramUpdate {
   };
 }
 
-async function handleList(chatId: number, projectFilter?: string) {
+async function handleList(chatId: number, projectFilter?: string | null) {
   const conditions = [eq(todos.status, "pending")];
 
   if (projectFilter) {
@@ -66,11 +66,8 @@ async function handleList(chatId: number, projectFilter?: string) {
   await sendMessage(chatId, message);
 }
 
-async function handleComplete(chatId: number, input: string) {
-  const match = input.match(/(\d+)\s*번?\s*(완료|끝|됐|done)/);
-  if (!match) return false;
-
-  const targetIndex = parseInt(match[1]);
+async function handleComplete(chatId: number, target: string) {
+  const num = parseInt(target);
 
   const pendingTodos = await db
     .select({ id: todos.id, title: todos.title })
@@ -78,34 +75,54 @@ async function handleComplete(chatId: number, input: string) {
     .where(eq(todos.status, "pending"))
     .orderBy(desc(todos.createdAt));
 
-  if (targetIndex < 1 || targetIndex > pendingTodos.length) {
-    await sendMessage(chatId, `${targetIndex}번 할일이 없어요.`);
-    return true;
+  if (!isNaN(num)) {
+    if (num < 1 || num > pendingTodos.length) {
+      await sendMessage(chatId, `${num}번 할일이 없어요.`);
+      return;
+    }
+
+    const todo = pendingTodos[num - 1];
+    await db
+      .update(todos)
+      .set({ status: "done", completedAt: new Date() })
+      .where(eq(todos.id, todo.id));
+
+    await sendMessage(
+      chatId,
+      `✓ ${todo.title} 완료!\n남은 할일 ${pendingTodos.length - 1}개`
+    );
+    return;
   }
 
-  const target = pendingTodos[targetIndex - 1];
-  await db
-    .update(todos)
-    .set({ status: "done", completedAt: new Date() })
-    .where(eq(todos.id, target.id));
-
-  const remaining = pendingTodos.length - 1;
-  await sendMessage(
-    chatId,
-    `✓ ${target.title} 완료!\n남은 할일 ${remaining}개`
+  const matched = pendingTodos.find((t) =>
+    t.title.toLowerCase().includes(target.toLowerCase())
   );
-  return true;
+  if (matched) {
+    await db
+      .update(todos)
+      .set({ status: "done", completedAt: new Date() })
+      .where(eq(todos.id, matched.id));
+
+    await sendMessage(
+      chatId,
+      `✓ ${matched.title} 완료!\n남은 할일 ${pendingTodos.length - 1}개`
+    );
+  } else {
+    await sendMessage(chatId, `"${target}"에 해당하는 할일을 못 찾았어요.`);
+  }
 }
 
-async function handleAdd(chatId: number, content: string) {
-  const parsed = await parseNaturalLanguage(content);
-
+async function handleAdd(
+  chatId: number,
+  content: string,
+  todo: { title: string; projectName: string | null; priority: string; deadline: string | null; memo: string | null }
+) {
   let projectId: string | null = null;
-  if (parsed.projectName) {
+  if (todo.projectName) {
     const project = await db
       .select()
       .from(projects)
-      .where(eq(projects.name, parsed.projectName))
+      .where(eq(projects.name, todo.projectName))
       .limit(1);
     if (project.length > 0) {
       projectId = project[0].id;
@@ -114,16 +131,16 @@ async function handleAdd(chatId: number, content: string) {
 
   await db.insert(todos).values({
     content,
-    title: parsed.title,
-    memo: parsed.memo,
+    title: todo.title,
+    memo: todo.memo,
     projectId,
-    priority: parsed.priority,
-    deadline: parsed.deadline ? new Date(parsed.deadline) : null,
+    priority: todo.priority as "urgent" | "normal" | "low",
+    deadline: todo.deadline ? new Date(todo.deadline) : null,
     source: "telegram",
   });
 
-  const projectLabel = parsed.projectName || "미분류";
-  await sendMessage(chatId, `${projectLabel} > ${parsed.title}\n추가했어요`);
+  const projectLabel = todo.projectName || "미분류";
+  await sendMessage(chatId, `${projectLabel} > ${todo.title}\n추가했어요`);
 }
 
 export async function POST(request: NextRequest) {
@@ -142,18 +159,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const listPatterns = /^(할일|목록|리스트|list|보여줘|뭐 ?남았)/i;
-  const completePatterns = /\d+\s*번?\s*(완료|끝|됐|done)/i;
+  try {
+    const analysis = await analyzeMessage(text);
 
-  if (listPatterns.test(text)) {
-    await handleList(chatId);
-  } else if (completePatterns.test(text)) {
-    const handled = await handleComplete(chatId, text);
-    if (!handled) {
-      await handleAdd(chatId, text);
+    switch (analysis.intent) {
+      case "add_todo":
+        if (analysis.todo) {
+          await handleAdd(chatId, text, analysis.todo);
+        }
+        break;
+      case "list":
+        await handleList(chatId, analysis.listFilter);
+        break;
+      case "complete":
+        if (analysis.completeTarget) {
+          await handleComplete(chatId, analysis.completeTarget);
+        }
+        break;
+      case "chat":
+      case "question":
+      case "edit":
+        await sendMessage(chatId, analysis.reply || "네, 알겠어요!");
+        break;
     }
-  } else {
-    await handleAdd(chatId, text);
+  } catch (error) {
+    console.error("Error processing message:", error);
+    await sendMessage(chatId, "처리 중 오류가 발생했어요. 다시 시도해주세요.");
   }
 
   return NextResponse.json({ ok: true });

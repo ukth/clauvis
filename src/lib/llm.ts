@@ -4,6 +4,10 @@ import { projects } from "./db/schema";
 
 const anthropic = new Anthropic();
 
+function extractJson(raw: string): string {
+  return raw.replace(/```(?:json)?\s*/g, "").replace(/```\s*/g, "").trim();
+}
+
 interface ParsedTodo {
   title: string;
   projectName: string | null;
@@ -12,9 +16,15 @@ interface ParsedTodo {
   memo: string | null;
 }
 
-export async function parseNaturalLanguage(
-  input: string
-): Promise<ParsedTodo> {
+interface AnalyzedIntent {
+  intent: "add_todo" | "list" | "complete" | "question" | "chat" | "edit";
+  todo?: ParsedTodo;
+  completeTarget?: string;
+  listFilter?: string;
+  reply?: string;
+}
+
+export async function analyzeMessage(input: string): Promise<AnalyzedIntent> {
   const projectList = await db.select().from(projects);
   const projectContext = projectList
     .map((p) => `- ${p.name} (aliases: ${p.aliases.join(", ") || "없음"})`)
@@ -24,40 +34,69 @@ export async function parseNaturalLanguage(
 
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 300,
+    max_tokens: 400,
     messages: [
       {
         role: "user",
-        content: `당신은 할일 파싱 도우미입니다. 사용자의 자연어 입력을 구조화된 할일로 변환해주세요.
+        content: `당신은 할일 관리 비서입니다. 사용자의 메시지를 분석해서 의도를 파악하세요.
 
 오늘 날짜: ${today}
 
 등록된 프로젝트:
 ${projectContext || "없음"}
 
-사용자 입력: "${input}"
+사용자 메시지: "${input}"
 
-다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
-{
-  "title": "정리된 할일 제목",
-  "projectName": "매칭되는 프로젝트명 또는 null",
-  "priority": "urgent 또는 normal 또는 low",
-  "deadline": "YYYY-MM-DD 형식 또는 null",
-  "memo": "추가 맥락이 있으면 문자열, 없으면 null"
-}
+의도를 분류하고 JSON으로만 응답하세요 (다른 텍스트 없이):
+
+1. 할일 추가 (새로운 작업/태스크를 기록하려는 의도):
+{"intent":"add_todo","todo":{"title":"정리된 제목","projectName":"프로젝트명 또는 null","priority":"urgent|normal|low","deadline":"YYYY-MM-DD 또는 null","memo":"부가 설명 또는 null"}}
+
+2. 목록 조회 (할일을 보고 싶은 의도):
+{"intent":"list","listFilter":"프로젝트명 또는 null"}
+
+3. 완료 처리 ("N번 완료", "그거 됐어" 등):
+{"intent":"complete","completeTarget":"번호 또는 할일 설명"}
+
+4. 질문 (할일에 대해 물어보는 것):
+{"intent":"question","reply":"질문에 대한 답변"}
+
+5. 일상 대화/인사/의미없는 입력:
+{"intent":"chat","reply":"적절한 응답"}
+
+6. 할일 수정 (기존 할일 변경):
+{"intent":"edit","reply":"어떻게 수정할지 안내"}
 
 규칙:
-- 오타와 줄임말을 보정하세요
-- 프로젝트 alias와 매칭되면 해당 프로젝트명을 사용하세요
-- "내일", "다음주" 같은 상대적 날짜를 절대 날짜로 변환하세요
-- 마감이 임박하면 priority를 urgent로 설정하세요`,
+- 명확한 작업/태스크가 있을 때만 add_todo로 분류
+- 인사, 감탄사, 질문은 add_todo가 아님
+- 오타와 줄임말을 보정
+- 프로젝트 alias 매칭
+- 상대적 날짜를 절대 날짜로 변환
+- chat의 reply는 친근하고 간결하게`,
       },
     ],
   });
 
-  const text =
+  const raw =
     response.content[0].type === "text" ? response.content[0].text : "";
-  return JSON.parse(text);
+  return JSON.parse(extractJson(raw));
+}
+
+export async function parseNaturalLanguage(
+  input: string
+): Promise<ParsedTodo> {
+  const result = await analyzeMessage(input);
+  if (result.intent === "add_todo" && result.todo) {
+    return result.todo;
+  }
+  return {
+    title: input,
+    projectName: null,
+    priority: "normal",
+    deadline: null,
+    memo: null,
+  };
 }
 
 export async function generateDailySummary(

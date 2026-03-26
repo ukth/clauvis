@@ -211,6 +211,47 @@ export async function POST(request: NextRequest) {
         }
         break;
       }
+      case "delete_project":
+        if (analysis.deleteTarget) {
+          const target = await db
+            .select()
+            .from(projects)
+            .where(eq(projects.name, analysis.deleteTarget))
+            .limit(1);
+          if (target.length > 0) {
+            await db.delete(projects).where(eq(projects.id, target[0].id));
+            await sendMessage(chatId, `🗑 ${target[0].name} 프로젝트 삭제했어요`);
+          } else {
+            await sendMessage(chatId, `"${analysis.deleteTarget}" 프로젝트를 못 찾았어요.`);
+          }
+        }
+        break;
+      case "delete_todo":
+        if (analysis.deleteTarget) {
+          const num = parseInt(analysis.deleteTarget);
+          const pendingTodos = await db
+            .select({ id: todos.id, title: todos.title })
+            .from(todos)
+            .where(eq(todos.status, "pending"))
+            .orderBy(desc(todos.createdAt));
+
+          if (!isNaN(num) && num >= 1 && num <= pendingTodos.length) {
+            const todo = pendingTodos[num - 1];
+            await db.delete(todos).where(eq(todos.id, todo.id));
+            await sendMessage(chatId, `🗑 ${todo.title} 삭제했어요`);
+          } else {
+            const matched = pendingTodos.find((t) =>
+              t.title.toLowerCase().includes(analysis.deleteTarget!.toLowerCase())
+            );
+            if (matched) {
+              await db.delete(todos).where(eq(todos.id, matched.id));
+              await sendMessage(chatId, `🗑 ${matched.title} 삭제했어요`);
+            } else {
+              await sendMessage(chatId, `"${analysis.deleteTarget}"에 해당하는 할일을 못 찾았어요.`);
+            }
+          }
+        }
+        break;
       case "chat":
       case "question":
       case "edit":

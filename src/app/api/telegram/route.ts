@@ -176,6 +176,41 @@ export async function POST(request: NextRequest) {
           await handleComplete(chatId, analysis.completeTarget);
         }
         break;
+      case "add_project":
+        if (analysis.project) {
+          const existing = await db
+            .select()
+            .from(projects)
+            .where(eq(projects.name, analysis.project.name))
+            .limit(1);
+          if (existing.length > 0) {
+            await sendMessage(chatId, `"${analysis.project.name}" 프로젝트는 이미 있어요.`);
+          } else {
+            await db.insert(projects).values({
+              name: analysis.project.name,
+              aliases: analysis.project.aliases || [],
+            });
+            const aliasStr = analysis.project.aliases.length > 0
+              ? ` (alias: ${analysis.project.aliases.join(", ")})`
+              : "";
+            await sendMessage(chatId, `📁 ${analysis.project.name}${aliasStr}\n프로젝트 추가했어요`);
+          }
+        }
+        break;
+      case "list_projects": {
+        const allProjects = await db.select().from(projects);
+        if (allProjects.length === 0) {
+          await sendMessage(chatId, "등록된 프로젝트가 없어요.");
+        } else {
+          let msg = `📁 프로젝트 ${allProjects.length}개\n\n`;
+          for (const p of allProjects) {
+            const aliasStr = p.aliases.length > 0 ? ` (${p.aliases.join(", ")})` : "";
+            msg += `• ${p.name}${aliasStr}\n`;
+          }
+          await sendMessage(chatId, msg);
+        }
+        break;
+      }
       case "chat":
       case "question":
       case "edit":

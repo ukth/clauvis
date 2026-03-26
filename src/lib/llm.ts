@@ -17,11 +17,12 @@ interface ParsedTodo {
 }
 
 interface AnalyzedIntent {
-  intent: "add_todo" | "list" | "complete" | "question" | "chat" | "edit";
+  intent: "add_todo" | "list" | "complete" | "question" | "chat" | "edit" | "add_project" | "list_projects";
   todo?: ParsedTodo;
   completeTarget?: string;
   listFilter?: string;
   reply?: string;
+  project?: { name: string; aliases: string[] };
 }
 
 export async function analyzeMessage(input: string): Promise<AnalyzedIntent> {
@@ -66,6 +67,12 @@ ${projectContext || "없음"}
 
 6. 할일 수정 (기존 할일 변경):
 {"intent":"edit","reply":"어떻게 수정할지 안내"}
+
+7. 프로젝트 추가 ("프로젝트 추가: X", "X 프로젝트 만들어줘"):
+{"intent":"add_project","project":{"name":"프로젝트명","aliases":["줄임말1"]}}
+
+8. 프로젝트 목록 조회:
+{"intent":"list_projects"}
 
 규칙:
 - 명확한 작업/태스크가 있을 때만 add_todo로 분류

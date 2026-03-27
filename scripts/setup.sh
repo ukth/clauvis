@@ -4,7 +4,7 @@
 
 set -e
 
-CLAUVIS_URL="https://app-azure-sigma-80.vercel.app"
+CLAUVIS_URL="https://clauvis.vercel.app"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"

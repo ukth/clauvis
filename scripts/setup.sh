@@ -13,6 +13,9 @@ HOOK_FILE="$HOOK_DIR/hook.sh"
 
 echo "🔧 Clauvis Setup"
 echo ""
+echo "API Key가 없다면 텔레그램 봇에서 발급받으세요:"
+echo "  👉 https://t.me/ukth_clauvis_bot 에서 /start"
+echo ""
 
 # 1. API Key 입력
 read -p "API Key를 입력하세요 (clv_...): " API_KEY
@@ -214,4 +217,4 @@ echo "  2. 아무 메시지나 보내면 할일이 자동으로 표시됩니다"
 echo "  3. 프로젝트별 필터링: 프로젝트 CLAUDE.md에 아래 추가"
 echo "     clauvis-project: 프로젝트명"
 echo ""
-echo "텔레그램 봇: @clauvis_bot"
+echo "텔레그램 봇: https://t.me/ukth_clauvis_bot"

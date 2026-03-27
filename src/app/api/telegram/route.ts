@@ -210,8 +210,9 @@ export async function POST(request: NextRequest) {
         esc(`환영합니다, ${user.name}님! 🎉`) +
         "\n\n" +
         esc("API Key:") + "\n`" + esc(user.apiKey) + "`\n\n" +
-        esc("Claude Code MCP 연동 시 이 키를 사용하세요.") +
-        "\n" +
+        esc("📌 Claude Code 연동하기:") + "\n" +
+        esc("터미널에서 아래 명령어를 실행하세요:") + "\n\n" +
+        "`curl \\-sL https://raw\\.githubusercontent\\.com/ukth/clauvis/main/scripts/setup\\.sh \\| bash`\n\n" +
         esc("이제 할일을 자유롭게 보내보세요!")
       );
       return NextResponse.json({ ok: true });

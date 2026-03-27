@@ -248,12 +248,12 @@ for p in json.load(sys.stdin):
     curl -s -X POST "$CLAUVIS_URL/api/projects" \
       -H "Authorization: Bearer $API_KEY" \
       -H "Content-Type: application/json" \
-      -d "$(python3 -c "import json; print(json.dumps({'slug': '$PROJ_NAME', 'aliases': [], 'directoryPath': '$PROJ_DIR'}))")" > /dev/null 2>&1
+      -d "{\"slug\":\"$PROJ_NAME\",\"aliases\":[],\"directoryPath\":\"$PROJ_DIR\"}" > /dev/null 2>&1
 
     echo "  ✓ $PROJ_NAME 등록 완료"
   done
 
-  # 입력 경로 자체가 .git을 가진 경우
+  # 입력 경로 자체가 .git을 가진 경우 (subproject가 없을 때)
   if [ -d "$PROJECT_DIR/.git" ]; then
     PROJ_NAME=$(basename "$PROJECT_DIR")
     EXISTS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
@@ -268,7 +268,7 @@ for p in json.load(sys.stdin):
       curl -s -X POST "$CLAUVIS_URL/api/projects" \
         -H "Authorization: Bearer $API_KEY" \
         -H "Content-Type: application/json" \
-        -d "$(python3 -c "import json; print(json.dumps({'name': '$PROJ_NAME', 'aliases': [], 'directoryPath': '$PROJECT_DIR'}))")" > /dev/null 2>&1
+        -d "{\"slug\":\"$PROJ_NAME\",\"aliases\":[],\"directoryPath\":\"$PROJECT_DIR\"}" > /dev/null 2>&1
       echo "  ✓ $PROJ_NAME 등록 완료"
     fi
   fi

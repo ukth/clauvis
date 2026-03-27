@@ -128,7 +128,12 @@ HOOKSCRIPT
 chmod +x "$HOOK_FILE"
 echo "✓ Hook 스크립트 설치 완료"
 
-# 3. settings.json에 MCP 서버 + Hook 추가
+# 3. MCP 서버 추가 (claude mcp add CLI 사용)
+claude mcp add --transport http clauvis "$CLAUVIS_URL/api/mcp" \
+  --header "Authorization: Bearer $API_KEY" 2>/dev/null
+echo "✓ MCP 서버 설정 완료"
+
+# 4. Hook 추가 (settings.json)
 mkdir -p "$CLAUDE_DIR"
 
 python3 -c "
@@ -141,20 +146,8 @@ if os.path.exists(path):
 else:
     settings = {}
 
-# MCP 서버
-settings.setdefault('mcpServers', {})
-settings['mcpServers']['clauvis'] = {
-    'type': 'http',
-    'url': '$CLAUVIS_URL/api/mcp',
-    'headers': {
-        'Authorization': 'Bearer $API_KEY'
-    }
-}
-
-# Hook
 settings.setdefault('hooks', {})
 existing = settings['hooks'].get('UserPromptSubmit', [])
-# Remove old clauvis hooks
 existing = [
     entry for entry in existing
     if not any('clauvis' in h.get('command', '') for h in entry.get('hooks', []))
@@ -170,7 +163,7 @@ settings['hooks']['UserPromptSubmit'] = existing
 
 with open(path, 'w') as f:
     json.dump(settings, f, indent=2, ensure_ascii=False)
-print('✓ MCP 서버 + Hook 설정 완료')
+print('✓ Hook 설정 완료')
 "
 
 # 4. Clauvis 스킬 설치

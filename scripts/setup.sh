@@ -225,53 +225,48 @@ while true; do
     continue
   fi
 
-  # .git이 있는 프로젝트 찾기
-  FOUND=0
-  find "$PROJECT_DIR" -maxdepth 2 -name ".git" -type d 2>/dev/null | while read gitdir; do
-    PROJ_DIR=$(dirname "$gitdir")
-    PROJ_SLUG=$(basename "$PROJ_DIR")
+  # 프로젝트 등록 함수 (slug 중복 시 상위 폴더 붙여 재시도)
+  register_project() {
+    local dir="$1"
+    local slug=$(basename "$dir")
+    local parent=$(basename "$(dirname "$dir")")
 
-    # 이미 등록된 프로젝트 건너뛰기
-    EXISTS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
+    # 이미 같은 경로로 등록되어 있으면 스킵
+    local exists=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
 import sys, json
 for p in json.load(sys.stdin):
-    if p.get('directoryPath') == '$PROJ_DIR':
+    if p.get('directoryPath') == '$dir':
         print('yes')
         break
 " 2>/dev/null)
 
-    if [ "$EXISTS" = "yes" ]; then
-      echo "  · $PROJ_SLUG (이미 등록됨)"
-      continue
+    if [ "$exists" = "yes" ]; then
+      echo "  · $slug (이미 등록됨)"
+      return
     fi
 
-    curl -s -X POST "$CLAUVIS_URL/api/projects" \
+    # 등록 시도
+    local status=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CLAUVIS_URL/api/projects" \
       -H "Authorization: Bearer $API_KEY" \
       -H "Content-Type: application/json" \
-      -d "{\"slug\":\"$PROJ_SLUG\",\"aliases\":[],\"directoryPath\":\"$PROJ_DIR\"}" > /dev/null 2>&1
+      -d "{\"slug\":\"$slug\",\"aliases\":[],\"directoryPath\":\"$dir\"}")
 
-    echo "  ✓ $PROJ_SLUG 등록 완료"
-  done
-
-  # 입력 경로 자체가 .git을 가진 경우 (subproject가 없을 때)
-  if [ -d "$PROJECT_DIR/.git" ]; then
-    PROJ_SLUG=$(basename "$PROJECT_DIR")
-    EXISTS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
-import sys, json
-for p in json.load(sys.stdin):
-    if p.get('directoryPath') == '$PROJECT_DIR':
-        print('yes')
-        break
-" 2>/dev/null)
-
-    if [ "$EXISTS" != "yes" ]; then
+    if [ "$status" = "409" ]; then
+      # slug 중복 → 상위 폴더 붙여서 재시도
+      slug="${parent}-${slug}"
       curl -s -X POST "$CLAUVIS_URL/api/projects" \
         -H "Authorization: Bearer $API_KEY" \
         -H "Content-Type: application/json" \
-        -d "{\"slug\":\"$PROJ_SLUG\",\"aliases\":[],\"directoryPath\":\"$PROJECT_DIR\"}" > /dev/null 2>&1
-      echo "  ✓ $PROJ_SLUG 등록 완료"
+        -d "{\"slug\":\"$slug\",\"aliases\":[],\"directoryPath\":\"$dir\"}" > /dev/null 2>&1
     fi
-  fi
+
+    echo "  ✓ $slug 등록 완료"
+  }
+
+  # .git이 있는 프로젝트 찾기
+  find "$PROJECT_DIR" -maxdepth 2 -name ".git" -type d 2>/dev/null | while read gitdir; do
+    register_project "$(dirname "$gitdir")"
+  done
 
   echo ""
 done

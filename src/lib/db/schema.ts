@@ -34,7 +34,7 @@ export const todos = pgTable("todos", {
   content: text("content").notNull(),
   title: text("title").notNull(),
   memo: text("memo"),
-  projectId: uuid("project_id").references(() => projects.id),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
   tags: text("tags").array().notNull().default([]),
   priority: priorityEnum("priority").notNull().default("normal"),
   deadline: timestamp("deadline"),

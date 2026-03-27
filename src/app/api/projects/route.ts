@@ -39,7 +39,13 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const userId = getUserId(request);
   const body = await request.json();
-  const { id, ...updateData } = body;
+  const { id, slug, name, aliases, directoryPath } = body;
+
+  const updateData: Record<string, unknown> = {};
+  if (slug !== undefined) updateData.slug = slug;
+  if (name !== undefined) updateData.name = name;
+  if (aliases !== undefined) updateData.aliases = aliases;
+  if (directoryPath !== undefined) updateData.directoryPath = directoryPath;
 
   const [updated] = await db
     .update(projects)

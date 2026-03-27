@@ -179,6 +179,12 @@ async function handleAdd(
 }
 
 export async function POST(request: NextRequest) {
+  // Webhook secret 검증
+  const secret = request.headers.get("x-telegram-bot-api-secret-token");
+  if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const update: TelegramUpdate = await request.json();
   const message = update.message;
 
@@ -212,7 +218,8 @@ export async function POST(request: NextRequest) {
         chatId,
         esc(`환영합니다, ${user.name}님! 🎉`) +
         "\n\n" +
-        esc("API Key:") + "\n`" + esc(user.apiKey) + "`\n\n" +
+        esc("API Key:") + "\n`" + esc(user.apiKey) + "`\n" +
+        esc("⚠️ 이 키를 다른 곳에 공유하지 마세요.") + "\n\n" +
         esc("📌 Claude Code 연동하기:") + "\n" +
         esc("터미널에서 아래 명령어를 실행하세요:") + "\n\n" +
         "`bash \\<\\(curl \\-sL https://raw\\.githubusercontent\\.com/ukth/clauvis/main/scripts/setup\\.sh\\)`\n\n" +
@@ -230,7 +237,8 @@ export async function POST(request: NextRequest) {
       chatId,
       esc(`${user.name}님, 이미 가입되어 있어요.`) +
       "\n\n" +
-      esc("API Key:") + "\n`" + esc(user.apiKey) + "`"
+      esc("API Key:") + "\n`" + esc(user.apiKey) + "`\n" +
+      esc("⚠️ 이 키를 다른 곳에 공유하지 마세요.")
     );
     return NextResponse.json({ ok: true });
   }

@@ -499,7 +499,7 @@ ${projectContext || "없음"}`;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6-20250514",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
       system: systemPrompt,
       tools: toolDefinitions,

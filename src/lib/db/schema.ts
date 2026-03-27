@@ -17,7 +17,8 @@ export const projects = pgTable("projects", {
   userId: uuid("user_id")
     .references(() => users.id)
     .notNull(),
-  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  name: text("name"),
   aliases: text("aliases").array().notNull().default([]),
   directoryPath: text("directory_path"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

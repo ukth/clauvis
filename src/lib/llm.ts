@@ -11,7 +11,7 @@ function extractJson(raw: string): string {
 
 interface ParsedTodo {
   title: string;
-  projectName: string | null;
+  projectSlug: string | null;
   priority: "urgent" | "normal" | "low";
   deadline: string | null;
   memo: string | null;
@@ -23,7 +23,7 @@ interface AnalyzedIntent {
   completeTarget?: string;
   listFilter?: string;
   reply?: string;
-  project?: { name: string; aliases: string[] };
+  project?: { slug: string; name?: string; aliases: string[] };
   deleteTarget?: string;
 }
 
@@ -31,7 +31,11 @@ export async function analyzeMessage(input: string, userId?: string): Promise<An
   const conditions = userId ? [eq(projects.userId, userId)] : [];
   const projectList = await db.select().from(projects).where(conditions.length > 0 ? conditions[0] : undefined);
   const projectContext = projectList
-    .map((p) => `- ${p.name} (aliases: ${p.aliases.join(", ") || "없음"})`)
+    .map((p) => {
+      const displayName = p.name ? ` (${p.name})` : "";
+      const aliases = p.aliases.length > 0 ? `, aliases: ${p.aliases.join(", ")}` : "";
+      return `- slug: ${p.slug}${displayName}${aliases}`;
+    })
     .join("\n");
 
   const today = new Date().toISOString().split("T")[0];
@@ -54,10 +58,10 @@ ${projectContext || "없음"}
 의도를 분류하고 JSON으로만 응답하세요 (다른 텍스트 없이):
 
 1. 할일 추가 (새로운 작업/태스크를 기록하려는 의도):
-{"intent":"add_todo","todo":{"title":"정리된 제목","projectName":"프로젝트명 또는 null","priority":"urgent|normal|low","deadline":"YYYY-MM-DD 또는 null","memo":"부가 설명 또는 null"}}
+{"intent":"add_todo","todo":{"title":"정리된 제목","projectSlug":"매칭되는 프로젝트 slug 또는 null","priority":"urgent|normal|low","deadline":"YYYY-MM-DD 또는 null","memo":"부가 설명 또는 null"}}
 
 2. 목록 조회 (할일을 보고 싶은 의도):
-{"intent":"list","listFilter":"프로젝트명 또는 null"}
+{"intent":"list","listFilter":"프로젝트 slug 또는 null"}
 
 3. 완료 처리 ("N번 완료", "그거 됐어" 등):
 {"intent":"complete","completeTarget":"번호 또는 할일 설명"}
@@ -72,13 +76,13 @@ ${projectContext || "없음"}
 {"intent":"edit","reply":"어떻게 수정할지 안내"}
 
 7. 프로젝트 추가 ("프로젝트 추가: X", "X 프로젝트 만들어줘"):
-{"intent":"add_project","project":{"name":"프로젝트명","aliases":["줄임말1"]}}
+{"intent":"add_project","project":{"slug":"영문-슬러그","name":"표시 이름(선택)","aliases":["줄임말1"]}}
 
 8. 프로젝트 목록 조회:
 {"intent":"list_projects"}
 
 9. 프로젝트 삭제 ("X 프로젝트 삭제해줘"):
-{"intent":"delete_project","deleteTarget":"프로젝트명"}
+{"intent":"delete_project","deleteTarget":"프로젝트 slug"}
 
 10. 할일 삭제 ("N번 삭제", "X 삭제해줘"):
 {"intent":"delete_todo","deleteTarget":"번호 또는 할일 설명"}
@@ -87,7 +91,7 @@ ${projectContext || "없음"}
 - 명확한 작업/태스크가 있을 때만 add_todo로 분류
 - 인사, 감탄사, 질문은 add_todo가 아님
 - 오타와 줄임말을 보정
-- 프로젝트 alias 매칭
+- 프로젝트는 slug, name, alias 중 매칭되는 것의 slug를 반환
 - 상대적 날짜를 절대 날짜로 변환
 - chat의 reply는 친근하고 간결하게`,
       },
@@ -109,7 +113,7 @@ export async function parseNaturalLanguage(
   }
   return {
     title: input,
-    projectName: null,
+    projectSlug: null,
     priority: "normal",
     deadline: null,
     memo: null,

@@ -40,7 +40,7 @@ function createServer(userId: string) {
           .select()
           .from(projects)
           .where(
-            and(eq(projects.name, project), eq(projects.userId, userId))
+            and(eq(projects.slug, project), eq(projects.userId, userId))
           )
           .limit(1);
         if (proj.length > 0) {
@@ -56,6 +56,7 @@ function createServer(userId: string) {
           priority: todos.priority,
           deadline: todos.deadline,
           status: todos.status,
+          projectSlug: projects.slug,
           projectName: projects.name,
         })
         .from(todos)
@@ -72,7 +73,7 @@ function createServer(userId: string) {
           const deadline = t.deadline
             ? ` (기한: ${t.deadline.toISOString().split("T")[0]})`
             : "";
-          const proj = t.projectName ? `[${t.projectName}] ` : "";
+          const proj = (t.projectName || t.projectSlug) ? `[${t.projectName || t.projectSlug}] ` : "";
           return `${i + 1}. ${proj}${t.title}${deadline}`;
         })
         .join("\n");
@@ -98,13 +99,13 @@ function createServer(userId: string) {
       const parsed = await parseNaturalLanguage(content, userId);
 
       let projectId: string | null = null;
-      if (parsed.projectName) {
+      if (parsed.projectSlug) {
         const proj = await db
           .select()
           .from(projects)
           .where(
             and(
-              eq(projects.name, parsed.projectName),
+              eq(projects.slug, parsed.projectSlug),
               eq(projects.userId, userId)
             )
           )
@@ -128,7 +129,7 @@ function createServer(userId: string) {
         })
         .returning();
 
-      const projectLabel = parsed.projectName || "미분류";
+      const projectLabel = parsed.projectSlug || "미분류";
       return {
         content: [
           {
@@ -220,9 +221,11 @@ function createServer(userId: string) {
 
       const text = result
         .map((p) => {
+          const displayName = p.name || p.slug;
+          const slugLabel = p.name ? ` [${p.slug}]` : "";
           const aliases =
             p.aliases.length > 0 ? ` (${p.aliases.join(", ")})` : "";
-          return `• ${p.name}${aliases}`;
+          return `• ${displayName}${slugLabel}${aliases}`;
         })
         .join("\n");
 
@@ -243,7 +246,8 @@ function createServer(userId: string) {
       title: "Add Project",
       description: "새 프로젝트를 등록합니다.",
       inputSchema: {
-        name: z.string().describe("프로젝트명"),
+        slug: z.string().describe("프로젝트 슬러그 (매칭용, 필수)"),
+        name: z.string().optional().describe("프로젝트 표시명 (선택)"),
         aliases: z
           .array(z.string())
           .optional()
@@ -254,11 +258,11 @@ function createServer(userId: string) {
           .describe("로컬 디렉토리 경로"),
       },
     },
-    async ({ name, aliases = [], directoryPath }) => {
+    async ({ slug, name, aliases = [], directoryPath }) => {
       const existing = await db
         .select()
         .from(projects)
-        .where(and(eq(projects.name, name), eq(projects.userId, userId)))
+        .where(and(eq(projects.slug, slug), eq(projects.userId, userId)))
         .limit(1);
 
       if (existing.length > 0) {
@@ -266,7 +270,7 @@ function createServer(userId: string) {
           content: [
             {
               type: "text" as const,
-              text: `"${name}" 프로젝트는 이미 존재합니다.`,
+              text: `"${slug}" 프로젝트는 이미 존재합니다.`,
             },
           ],
         };
@@ -274,14 +278,16 @@ function createServer(userId: string) {
 
       await db.insert(projects).values({
         userId,
-        name,
+        slug,
+        name: name ?? null,
         aliases,
         directoryPath: directoryPath ?? null,
       });
 
+      const displayName = name || slug;
       return {
         content: [
-          { type: "text" as const, text: `📁 ${name} 프로젝트 추가했습니다.` },
+          { type: "text" as const, text: `📁 ${displayName} 프로젝트 추가했습니다.` },
         ],
       };
     }

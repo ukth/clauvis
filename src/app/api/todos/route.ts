@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { todos, projects } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, or } from "drizzle-orm";
 import { parseNaturalLanguage } from "@/lib/llm";
 import { getUserId } from "@/lib/auth";
 
@@ -19,7 +19,10 @@ export async function GET(request: NextRequest) {
     const project = await db
       .select()
       .from(projects)
-      .where(and(eq(projects.name, projectFilter), eq(projects.userId, userId)))
+      .where(and(
+        or(eq(projects.slug, projectFilter), eq(projects.name, projectFilter)),
+        eq(projects.userId, userId)
+      ))
       .limit(1);
     if (project.length > 0) {
       conditions.push(eq(todos.projectId, project[0].id));
@@ -33,6 +36,7 @@ export async function GET(request: NextRequest) {
       title: todos.title,
       memo: todos.memo,
       projectId: todos.projectId,
+      projectSlug: projects.slug,
       projectName: projects.name,
       tags: todos.tags,
       priority: todos.priority,
@@ -58,11 +62,11 @@ export async function POST(request: NextRequest) {
   const parsed = await parseNaturalLanguage(content, userId);
 
   let projectId: string | null = null;
-  if (parsed.projectName) {
+  if (parsed.projectSlug) {
     const project = await db
       .select()
       .from(projects)
-      .where(and(eq(projects.name, parsed.projectName), eq(projects.userId, userId)))
+      .where(and(eq(projects.slug, parsed.projectSlug), eq(projects.userId, userId)))
       .limit(1);
     if (project.length > 0) {
       projectId = project[0].id;
@@ -85,6 +89,6 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ...newTodo,
-    projectName: parsed.projectName,
+    projectSlug: parsed.projectSlug,
   });
 }

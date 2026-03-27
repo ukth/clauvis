@@ -84,7 +84,7 @@ projects = json.load(sys.stdin)
 for p in projects:
     dp = p.get('directoryPath')
     if dp and (cwd == dp or cwd.startswith(dp + '/')):
-        print(p['name'])
+        print(p['slug'])
         break
 " 2>/dev/null)
   if [ -n "$MATCH" ]; then
@@ -110,7 +110,7 @@ import sys, json
 todos = json.load(sys.stdin)
 grouped = {}
 for t in todos:
-    p = t.get('projectName') or '미분류'
+    p = t.get('projectName') or t.get('projectSlug') or '미분류'
     grouped.setdefault(p, []).append(t)
 i = 1
 for proj, items in grouped.items():
@@ -248,7 +248,7 @@ for p in json.load(sys.stdin):
     curl -s -X POST "$CLAUVIS_URL/api/projects" \
       -H "Authorization: Bearer $API_KEY" \
       -H "Content-Type: application/json" \
-      -d "$(python3 -c "import json; print(json.dumps({'name': '$PROJ_NAME', 'aliases': [], 'directoryPath': '$PROJ_DIR'}))")" > /dev/null 2>&1
+      -d "$(python3 -c "import json; print(json.dumps({'slug': '$PROJ_NAME', 'aliases': [], 'directoryPath': '$PROJ_DIR'}))")" > /dev/null 2>&1
 
     echo "  ✓ $PROJ_NAME 등록 완료"
   done

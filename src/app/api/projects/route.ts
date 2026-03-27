@@ -16,11 +16,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const userId = getUserId(request);
   const body = await request.json();
-  const { name, aliases = [], directoryPath = null } = body;
+  const { slug, name = null, aliases = [], directoryPath = null } = body;
 
   const [project] = await db
     .insert(projects)
-    .values({ userId, name, aliases, directoryPath })
+    .values({ userId, slug, name, aliases, directoryPath })
     .returning();
 
   return NextResponse.json(project);

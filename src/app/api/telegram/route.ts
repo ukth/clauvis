@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { todos, projects, users } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, or } from "drizzle-orm";
 import { analyzeMessage } from "@/lib/llm";
 import { sendMessage, esc } from "@/lib/telegram";
 import { randomBytes } from "crypto";
@@ -49,7 +49,7 @@ async function handleList(chatId: number, userId: string, projectFilter?: string
     const project = await db
       .select()
       .from(projects)
-      .where(and(eq(projects.name, projectFilter), eq(projects.userId, userId)))
+      .where(and(eq(projects.slug, projectFilter), eq(projects.userId, userId)))
       .limit(1);
     if (project.length > 0) {
       conditions.push(eq(todos.projectId, project[0].id));
@@ -62,6 +62,7 @@ async function handleList(chatId: number, userId: string, projectFilter?: string
       priority: todos.priority,
       deadline: todos.deadline,
       projectName: projects.name,
+      projectSlug: projects.slug,
     })
     .from(todos)
     .leftJoin(projects, eq(todos.projectId, projects.id))
@@ -75,7 +76,7 @@ async function handleList(chatId: number, userId: string, projectFilter?: string
 
   const grouped: Record<string, typeof result> = {};
   for (const todo of result) {
-    const key = todo.projectName || "미분류";
+    const key = todo.projectName || todo.projectSlug || "미분류";
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(todo);
   }
@@ -146,17 +147,19 @@ async function handleAdd(
   chatId: number,
   userId: string,
   content: string,
-  todo: { title: string; projectName: string | null; priority: string; deadline: string | null; memo: string | null }
+  todo: { title: string; projectSlug: string | null; priority: string; deadline: string | null; memo: string | null }
 ) {
   let projectId: string | null = null;
-  if (todo.projectName) {
+  let projectDisplayName: string | null = null;
+  if (todo.projectSlug) {
     const project = await db
       .select()
       .from(projects)
-      .where(and(eq(projects.name, todo.projectName), eq(projects.userId, userId)))
+      .where(and(eq(projects.slug, todo.projectSlug), eq(projects.userId, userId)))
       .limit(1);
     if (project.length > 0) {
       projectId = project[0].id;
+      projectDisplayName = project[0].name || project[0].slug;
     }
   }
 
@@ -171,7 +174,7 @@ async function handleAdd(
     source: "telegram",
   });
 
-  const projectLabel = todo.projectName || "미분류";
+  const projectLabel = projectDisplayName || todo.projectSlug || "미분류";
   await sendMessage(chatId, `${esc(projectLabel)} \\> ${esc(todo.title)}\n${esc("추가했어요")}`);
 }
 
@@ -254,20 +257,22 @@ export async function POST(request: NextRequest) {
           const existing = await db
             .select()
             .from(projects)
-            .where(and(eq(projects.name, analysis.project.name), eq(projects.userId, user.id)))
+            .where(and(eq(projects.slug, analysis.project.slug), eq(projects.userId, user.id)))
             .limit(1);
+          const displayName = analysis.project.name || analysis.project.slug;
           if (existing.length > 0) {
-            await sendMessage(chatId, esc(`"${analysis.project.name}" 프로젝트는 이미 있어요.`));
+            await sendMessage(chatId, esc(`"${displayName}" 프로젝트는 이미 있어요.`));
           } else {
             await db.insert(projects).values({
               userId: user.id,
+              slug: analysis.project.slug,
               name: analysis.project.name,
               aliases: analysis.project.aliases || [],
             });
             const aliasStr = analysis.project.aliases.length > 0
               ? ` \\(alias: ${esc(analysis.project.aliases.join(", "))}\\)`
               : "";
-            await sendMessage(chatId, `📁 ${esc(analysis.project.name)}${aliasStr}\n${esc("프로젝트 추가했어요")}`);
+            await sendMessage(chatId, `📁 ${esc(displayName)}${aliasStr}\n${esc("프로젝트 추가했어요")}`);
           }
         }
         break;
@@ -282,7 +287,7 @@ export async function POST(request: NextRequest) {
           let msg = esc(`📁 프로젝트 ${allProjects.length}개`) + "\n\n";
           for (const p of allProjects) {
             const aliasStr = p.aliases.length > 0 ? ` \\(${esc(p.aliases.join(", "))}\\)` : "";
-            msg += `• ${esc(p.name)}${aliasStr}\n`;
+            msg += `• ${esc(p.name || p.slug)}${aliasStr}\n`;
           }
           await sendMessage(chatId, msg);
         }
@@ -293,11 +298,11 @@ export async function POST(request: NextRequest) {
           const target = await db
             .select()
             .from(projects)
-            .where(and(eq(projects.name, analysis.deleteTarget), eq(projects.userId, user.id)))
+            .where(and(eq(projects.slug, analysis.deleteTarget), eq(projects.userId, user.id)))
             .limit(1);
           if (target.length > 0) {
             await db.delete(projects).where(eq(projects.id, target[0].id));
-            await sendMessage(chatId, `🗑 ${esc(target[0].name)} ${esc("프로젝트 삭제했어요")}`);
+            await sendMessage(chatId, `🗑 ${esc(target[0].name || target[0].slug)} ${esc("프로젝트 삭제했어요")}`);
           } else {
             await sendMessage(chatId, esc(`"${analysis.deleteTarget}" 프로젝트를 못 찾았어요.`));
           }

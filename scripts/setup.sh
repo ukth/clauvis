@@ -144,7 +144,7 @@ else:
 # MCP 서버
 settings.setdefault('mcpServers', {})
 settings['mcpServers']['clauvis'] = {
-    'type': 'url',
+    'type': 'http',
     'url': '$CLAUVIS_URL/api/mcp',
     'headers': {
         'Authorization': 'Bearer $API_KEY'

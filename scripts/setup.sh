@@ -173,33 +173,26 @@ with open(path, 'w') as f:
 print('✓ MCP 서버 + Hook 설정 완료')
 "
 
-# 4. CLAUDE.md에 Clauvis 지시 추가
-CLAUVIS_BLOCK="## Clauvis (할일 관리)
-- 세션 시작 시 할일 목록이 자동으로 주입됩니다 (hook). 요약해서 알려주세요.
-- 프로젝트 CLAUDE.md에 \`clauvis-project: 프로젝트명\`이 있으면 해당 프로젝트만 표시됩니다.
-- 작업 완료 시 사용자에게 Clauvis에서 완료 처리할지 물어볼 것
-- MCP 도구: list_todos, add_todo, complete_todo, list_projects, add_project"
+# 4. Clauvis 스킬 설치
+SKILL_DIR="$CLAUDE_DIR/skills/clauvis"
+mkdir -p "$SKILL_DIR"
+curl -sL "https://raw.githubusercontent.com/ukth/clauvis/main/scripts/clauvis-skill.md" > "$SKILL_DIR/SKILL.md"
+echo "✓ Clauvis 스킬 설치 완료"
+
+# 5. CLAUDE.md에 최소 안내 추가
+CLAUVIS_LINE="## Clauvis
+- 세션 시작 시 할일이 자동 주입됩니다. 요약해서 알려주세요."
 
 if [ -f "$CLAUDE_MD" ]; then
-  if grep -q "Clauvis" "$CLAUDE_MD"; then
-    # 기존 Clauvis 블록 교체
-    python3 -c "
-import re
-with open('$CLAUDE_MD', 'r') as f:
-    content = f.read()
-new_block = '''$CLAUVIS_BLOCK'''
-content = re.sub(r'## Clauvis.*?(?=\n## |\Z)', new_block + '\n', content, flags=re.DOTALL)
-with open('$CLAUDE_MD', 'w') as f:
-    f.write(content)
-print('✓ CLAUDE.md Clauvis 설정 업데이트 완료')
-"
-  else
+  if ! grep -q "Clauvis" "$CLAUDE_MD"; then
     echo "" >> "$CLAUDE_MD"
-    echo "$CLAUVIS_BLOCK" >> "$CLAUDE_MD"
-    echo "✓ CLAUDE.md에 Clauvis 지시 추가 완료"
+    echo "$CLAUVIS_LINE" >> "$CLAUDE_MD"
+    echo "✓ CLAUDE.md 업데이트 완료"
+  else
+    echo "✓ CLAUDE.md에 이미 Clauvis 설정이 있습니다."
   fi
 else
-  echo "$CLAUVIS_BLOCK" > "$CLAUDE_MD"
+  echo "$CLAUVIS_LINE" > "$CLAUDE_MD"
   echo "✓ CLAUDE.md 생성 완료"
 fi
 

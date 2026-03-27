@@ -212,7 +212,7 @@ read -p "작업 폴더를 스캔해서 프로젝트를 등록할까요? (y/n): "
 
 if [[ "$SCAN_PROJECTS" =~ ^[yY] ]]; then
   read -p "워크스페이스 경로를 입력하세요 (예: ~/Workspace/DEV): " WORKSPACE_DIR
-  WORKSPACE_DIR=$(eval echo "$WORKSPACE_DIR")
+  WORKSPACE_DIR=$(realpath "$(eval echo "$WORKSPACE_DIR")" 2>/dev/null || eval echo "$WORKSPACE_DIR")
 
   if [ -d "$WORKSPACE_DIR" ]; then
     echo ""

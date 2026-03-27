@@ -214,16 +214,18 @@ async function execListTodos(
     return "할일이 없습니다.";
   }
 
-  const grouped: Record<string, typeof result> = {};
+  const grouped: Record<string, { display: string; items: typeof result }> = {};
   for (const todo of result) {
-    const key = todo.projectName || todo.projectSlug || "미분류";
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(todo);
+    const slug = todo.projectSlug || "미분류";
+    const display = todo.projectName ? `${todo.projectName}[${slug}]` : slug;
+    if (!grouped[slug]) grouped[slug] = { display, items: [] };
+    grouped[slug].items.push(todo);
   }
 
   let message = `총 ${result.length}개의 할일:\n`;
-  for (const [project, items] of Object.entries(grouped)) {
-    message += `\n[${project}]\n`;
+  for (const [, group] of Object.entries(grouped)) {
+    message += `\n[${group.display}]\n`;
+    const items = group.items;
     let index = 1;
     for (const item of items) {
       const deadlineStr = item.deadline
@@ -269,8 +271,11 @@ async function execAddTodo(
     source: "telegram",
   });
 
-  const projectLabel = projectDisplayName || input.project_slug || "미분류";
-  return `할일 추가 완료: [${projectLabel}] ${input.title}`;
+  const projectLabel = projectDisplayName
+    ? `${projectDisplayName}[${input.project_slug}]`
+    : input.project_slug || "미분류";
+  const memoStr = input.memo ? `\n메모: ${input.memo}` : "";
+  return `할일 추가 완료: [${projectLabel}] ${input.title}${memoStr}`;
 }
 
 async function execCompleteTodo(

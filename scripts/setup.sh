@@ -250,9 +250,14 @@ for p in json.load(sys.stdin):
   }
 
   # .git이 있는 프로젝트 찾기
-  find "$PROJECT_DIR" -maxdepth 2 -name ".git" -type d 2>/dev/null | while read gitdir; do
-    register_project "$(dirname "$gitdir")"
-  done
+  GIT_COUNT=$(find "$PROJECT_DIR" -maxdepth 2 -name ".git" -type d 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$GIT_COUNT" = "0" ]; then
+    echo "  ⚠ .git 프로젝트를 찾지 못했습니다: $PROJECT_DIR"
+  else
+    find "$PROJECT_DIR" -maxdepth 2 -name ".git" -type d 2>/dev/null | while read gitdir; do
+      register_project "$(dirname "$gitdir")"
+    done
+  fi
 
   echo ""
 done

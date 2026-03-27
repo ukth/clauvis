@@ -60,7 +60,7 @@ import json, os
 with open(os.path.expanduser('$SETTINGS')) as f:
     s = json.load(f)
 u = s.get('mcpServers',{}).get('clauvis',{}).get('url','')
-print(u.replace('/mcp',''))
+print(u.replace('/api/mcp',''))
 " 2>/dev/null)
 
 [ -z "$URL" ] && exit 0
@@ -132,14 +132,20 @@ settings['mcpServers']['clauvis'] = {
 
 # Hook
 settings.setdefault('hooks', {})
-settings['hooks']['UserPromptSubmit'] = [
-    h for h in settings['hooks'].get('UserPromptSubmit', [])
-    if 'clauvis' not in h.get('command', '')
+existing = settings['hooks'].get('UserPromptSubmit', [])
+# Remove old clauvis hooks
+existing = [
+    entry for entry in existing
+    if not any('clauvis' in h.get('command', '') for h in entry.get('hooks', []))
 ]
-settings['hooks']['UserPromptSubmit'].append({
-    'type': 'command',
-    'command': '$HOOK_DIR/hook.sh'
+existing.append({
+    'matcher': '',
+    'hooks': [{
+        'type': 'command',
+        'command': '$HOOK_DIR/hook.sh'
+    }]
 })
+settings['hooks']['UserPromptSubmit'] = existing
 
 with open(path, 'w') as f:
     json.dump(settings, f, indent=2, ensure_ascii=False)

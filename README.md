@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Clauvis
 
-## Getting Started
+AI-powered personal todo manager that lives where you work — Telegram, Claude Code, and the web.
 
-First, run the development server:
+## What is Clauvis?
+
+Clauvis is a todo management service designed for developers who juggle multiple projects. Instead of switching between apps, you manage everything through natural language — in Telegram or directly inside Claude Code via MCP.
+
+**Key features:**
+
+- **Natural language input** — Just type "fix image bug in mosun" and the AI figures out the project, title, and priority
+- **Telegram bot** — Add, list, complete, and delete todos from your phone
+- **Claude Code MCP integration** — Your todos show up automatically when you start a coding session, filtered by the current project
+- **Multi-project** — Organize todos by project with automatic directory-based matching
+- **Conversational** — The bot remembers context, so "mark #2 as done" just works
+- **Multi-user** — Each user gets their own API key and isolated data
+
+## Quick Start
+
+### 1. Get your API key
+
+Message [@ukth_clauvis_bot](https://t.me/ukth_clauvis_bot) on Telegram and send `/start`.
+
+### 2. Set up Claude Code integration
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+curl -sL https://raw.githubusercontent.com/ukth/clauvis/main/scripts/setup.sh | bash
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This installs:
+- MCP server for Claude Code (todo tools available in every session)
+- Session start hook (automatically shows your todos)
+- Clauvis skill (Claude knows when and how to use todo tools)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Register your projects
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The setup script will ask for project directories. Point it to your workspace and it auto-detects git repos.
 
-## Learn More
+When you open Claude Code in a registered project directory, only that project's todos are shown.
 
-To learn more about Next.js, take a look at the following resources:
+## Architecture
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+Telegram Bot  ←→  Next.js API (Vercel)  ←→  PostgreSQL (Neon)
+Claude Code   ←→  MCP Server            ←→       ↑
+                       ↓
+                  Claude Sonnet (AI agent with tool-use loop)
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Tech Stack
 
-## Deploy on Vercel
+- **Framework**: Next.js (App Router)
+- **Database**: PostgreSQL (Neon) + Drizzle ORM
+- **AI**: Claude Sonnet 4.6 (Telegram agent) / Claude Haiku 4.5 (API parsing)
+- **Messaging**: Telegram Bot API
+- **Deployment**: Vercel
+- **Integration**: MCP (Model Context Protocol) for Claude Code
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Self-hosting
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Clone the repo
+2. Create a Neon database
+3. Set up environment variables:
+
+```
+DATABASE_URL=postgresql://...
+DATABASE_URL_UNPOOLED=postgresql://...
+ANTHROPIC_API_KEY=sk-ant-...
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_WEBHOOK_SECRET=...
+ADMIN_SECRET_KEY=...
+```
+
+4. Push the schema: `npx drizzle-kit push`
+5. Deploy to Vercel: `vercel --prod`
+6. Register the Telegram webhook:
+
+```bash
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<YOUR_URL>/api/telegram&secret_token=<SECRET>"
+```
+
+## License
+
+MIT

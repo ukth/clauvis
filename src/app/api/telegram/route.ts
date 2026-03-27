@@ -120,8 +120,8 @@ export async function POST(request: NextRequest) {
     // Save bot response to chat history
     await saveMessage(user.id, "assistant", response);
 
-    // Send response via Telegram
-    await sendMessage(chatId, esc(response));
+    // Send response via Telegram (agent formats in MarkdownV2)
+    await sendMessage(chatId, response);
   } catch (error) {
     console.error("Error processing message:", error);
     await sendMessage(chatId, esc("처리 중 오류가 발생했어요. 다시 시도해주세요."));

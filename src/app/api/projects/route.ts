@@ -18,6 +18,16 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { slug, name = null, aliases = [], directoryPath = null } = body;
 
+  const existing = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.slug, slug), eq(projects.userId, userId)))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return NextResponse.json({ error: "Project slug already exists" }, { status: 409 });
+  }
+
   const [project] = await db
     .insert(projects)
     .values({ userId, slug, name, aliases, directoryPath })

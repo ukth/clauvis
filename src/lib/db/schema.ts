@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, pgEnum, unique } from "drizzle-orm/pg-core";
 
 export const priorityEnum = pgEnum("priority", ["urgent", "normal", "low"]);
 export const statusEnum = pgEnum("status", ["pending", "done"]);
@@ -22,7 +22,9 @@ export const projects = pgTable("projects", {
   aliases: text("aliases").array().notNull().default([]),
   directoryPath: text("directory_path"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  unique().on(table.userId, table.slug),
+]);
 
 export const todos = pgTable("todos", {
   id: uuid("id").defaultRandom().primaryKey(),

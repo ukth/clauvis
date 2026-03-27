@@ -216,7 +216,7 @@ if [[ "$SCAN_PROJECTS" =~ ^[yY] ]]; then
 
   if [ -d "$WORKSPACE_DIR" ]; then
     echo ""
-    echo "프로젝트 스캔 중..."
+    echo "프로젝트 스캔 중... (.git이 있는 폴더를 프로젝트로 등록합니다)"
 
     # .git이 있는 디렉토리를 프로젝트로 간주 (depth 3)
     find "$WORKSPACE_DIR" -maxdepth 3 -name ".git" -type d 2>/dev/null | while read gitdir; do

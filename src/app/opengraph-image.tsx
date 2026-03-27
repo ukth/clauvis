@@ -1,6 +1,5 @@
 import { ImageResponse } from "next/og";
 
-export const runtime = "edge";
 export const alt = "Clauvis — Todo manager for developers";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -56,29 +55,62 @@ export default function Image() {
         </div>
         <div
           style={{
-            fontSize: "56px",
-            fontWeight: 300,
-            color: "#e0e0e0",
-            lineHeight: 1.2,
+            display: "flex",
+            flexDirection: "column",
             marginBottom: "24px",
-            fontFamily: "sans-serif",
           }}
         >
-          Your todos, where
-          <br />
-          you{" "}
-          <span style={{ color: "#e2a832", fontWeight: 400 }}>actually</span>{" "}
-          work.
+          <span
+            style={{
+              fontSize: "56px",
+              fontWeight: 300,
+              color: "#e0e0e0",
+              lineHeight: 1.2,
+            }}
+          >
+            Your todos, where
+          </span>
+          <div style={{ display: "flex" }}>
+            <span
+              style={{
+                fontSize: "56px",
+                fontWeight: 300,
+                color: "#e0e0e0",
+                lineHeight: 1.2,
+              }}
+            >
+              you{" "}
+            </span>
+            <span
+              style={{
+                fontSize: "56px",
+                fontWeight: 400,
+                color: "#e2a832",
+                lineHeight: 1.2,
+              }}
+            >
+              actually
+            </span>
+            <span
+              style={{
+                fontSize: "56px",
+                fontWeight: 300,
+                color: "#e0e0e0",
+                lineHeight: 1.2,
+              }}
+            >
+              {" "}work.
+            </span>
+          </div>
         </div>
-        <div
+        <span
           style={{
             fontSize: "22px",
             color: "#6b6b6b",
-            fontFamily: "sans-serif",
           }}
         >
           Telegram + Claude Code + Natural Language
-        </div>
+        </span>
       </div>
     ),
     { ...size }

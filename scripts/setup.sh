@@ -206,51 +206,75 @@ fi
 echo ""
 echo "✅ 기본 설정 완료!"
 
-# 5. 프로젝트 자동 등록
+# 5. 프로젝트 등록 (반복)
 echo ""
-read -p "작업 폴더를 스캔해서 프로젝트를 등록할까요? (y/n): " SCAN_PROJECTS
+echo "📁 프로젝트를 등록하면 해당 디렉토리에서 Claude Code 실행 시 할일이 자동 필터링됩니다."
+echo "   (.git이 있는 폴더를 프로젝트로 등록합니다)"
+echo ""
 
-if [[ "$SCAN_PROJECTS" =~ ^[yY] ]]; then
-  read -p "워크스페이스 경로를 입력하세요 (예: ~/Workspace/DEV): " WORKSPACE_DIR
-  WORKSPACE_DIR=$(realpath "$(eval echo "$WORKSPACE_DIR")" 2>/dev/null || eval echo "$WORKSPACE_DIR")
+while true; do
+  read -p "프로젝트 경로를 입력하세요 (완료하려면 엔터): " PROJECT_INPUT
 
-  if [ -d "$WORKSPACE_DIR" ]; then
-    echo ""
-    echo "프로젝트 스캔 중... (.git이 있는 폴더를 프로젝트로 등록합니다)"
+  # 빈 입력이면 종료
+  [ -z "$PROJECT_INPUT" ] && break
 
-    # .git이 있는 디렉토리를 프로젝트로 간주 (depth 3)
-    find "$WORKSPACE_DIR" -maxdepth 3 -name ".git" -type d 2>/dev/null | while read gitdir; do
-      PROJECT_DIR=$(dirname "$gitdir")
-      PROJECT_NAME=$(basename "$PROJECT_DIR")
+  PROJECT_DIR=$(realpath "$(eval echo "$PROJECT_INPUT")" 2>/dev/null || eval echo "$PROJECT_INPUT")
 
-      # 이미 등록된 프로젝트 건너뛰기
-      EXISTS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
+  if [ ! -d "$PROJECT_DIR" ]; then
+    echo "  ❌ 디렉토리를 찾을 수 없습니다: $PROJECT_DIR"
+    continue
+  fi
+
+  # .git이 있는 프로젝트 찾기
+  FOUND=0
+  find "$PROJECT_DIR" -maxdepth 2 -name ".git" -type d 2>/dev/null | while read gitdir; do
+    PROJ_DIR=$(dirname "$gitdir")
+    PROJ_NAME=$(basename "$PROJ_DIR")
+
+    # 이미 등록된 프로젝트 건너뛰기
+    EXISTS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
 import sys, json
-projects = json.load(sys.stdin)
-for p in projects:
+for p in json.load(sys.stdin):
+    if p.get('directoryPath') == '$PROJ_DIR':
+        print('yes')
+        break
+" 2>/dev/null)
+
+    if [ "$EXISTS" = "yes" ]; then
+      echo "  · $PROJ_NAME (이미 등록됨)"
+      continue
+    fi
+
+    curl -s -X POST "$CLAUVIS_URL/api/projects" \
+      -H "Authorization: Bearer $API_KEY" \
+      -H "Content-Type: application/json" \
+      -d "$(python3 -c "import json; print(json.dumps({'name': '$PROJ_NAME', 'aliases': [], 'directoryPath': '$PROJ_DIR'}))")" > /dev/null 2>&1
+
+    echo "  ✓ $PROJ_NAME 등록 완료"
+  done
+
+  # 입력 경로 자체가 .git을 가진 경우
+  if [ -d "$PROJECT_DIR/.git" ]; then
+    PROJ_NAME=$(basename "$PROJECT_DIR")
+    EXISTS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
+import sys, json
+for p in json.load(sys.stdin):
     if p.get('directoryPath') == '$PROJECT_DIR':
         print('yes')
         break
 " 2>/dev/null)
 
-      if [ "$EXISTS" = "yes" ]; then
-        continue
-      fi
-
+    if [ "$EXISTS" != "yes" ]; then
       curl -s -X POST "$CLAUVIS_URL/api/projects" \
         -H "Authorization: Bearer $API_KEY" \
         -H "Content-Type: application/json" \
-        -d "$(python3 -c "import json; print(json.dumps({'name': '$PROJECT_NAME', 'aliases': [], 'directoryPath': '$PROJECT_DIR'}))")" > /dev/null 2>&1
-
-      echo "  ✓ $PROJECT_NAME ($PROJECT_DIR)"
-    done
-
-    echo ""
-    echo "프로젝트 등록 완료!"
-  else
-    echo "❌ 디렉토리를 찾을 수 없습니다: $WORKSPACE_DIR"
+        -d "$(python3 -c "import json; print(json.dumps({'name': '$PROJ_NAME', 'aliases': [], 'directoryPath': '$PROJECT_DIR'}))")" > /dev/null 2>&1
+      echo "  ✓ $PROJ_NAME 등록 완료"
+    fi
   fi
-fi
+
+  echo ""
+done
 
 echo ""
 echo "✅ Clauvis 설정 완료!"

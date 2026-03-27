@@ -4,7 +4,7 @@ import { neon } from "@neondatabase/serverless";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/api/telegram" || pathname === "/api/users") {
+  if (pathname === "/api/telegram" || pathname === "/api/users" || pathname === "/api/mcp") {
     return NextResponse.next();
   }
 

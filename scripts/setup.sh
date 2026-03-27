@@ -47,7 +47,7 @@ if [ -f "$PPID_LOCK" ]; then
 fi
 touch "$PPID_LOCK"
 
-SETTINGS="$HOME/.claude/settings.json"
+SETTINGS="$HOME/.claude.json"
 API_KEY=$(python3 -c "
 import json, os
 with open(os.path.expanduser('$SETTINGS')) as f:

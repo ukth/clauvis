@@ -15,11 +15,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Clauvis — Todo manager for developers",
   description: "AI-powered personal todo manager. Capture tasks in Telegram, see them in Claude Code, manage across projects with natural language.",
-  metadataBase: new URL("https://clauvis.vercel.app"),
+  metadataBase: new URL("https://clauvis.backproach.dev"),
   openGraph: {
     title: "Clauvis — Your todos, where you actually work.",
     description: "AI-powered todo manager for developers. Telegram bot + Claude Code MCP integration.",
-    url: "https://clauvis.vercel.app",
+    url: "https://clauvis.backproach.dev",
     siteName: "Clauvis",
     type: "website",
   },

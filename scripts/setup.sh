@@ -4,7 +4,7 @@
 
 set -e
 
-CLAUVIS_URL="https://clauvis.vercel.app"
+CLAUVIS_URL="https://clauvis.backproach.dev"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"

@@ -4,8 +4,19 @@ export const priorityEnum = pgEnum("priority", ["urgent", "normal", "low"]);
 export const statusEnum = pgEnum("status", ["pending", "done"]);
 export const sourceEnum = pgEnum("source", ["telegram", "web", "mcp"]);
 
+export const users = pgTable("users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  apiKey: text("api_key").notNull().unique(),
+  telegramChatId: text("telegram_chat_id").unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const projects = pgTable("projects", {
   id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull(),
   name: text("name").notNull(),
   aliases: text("aliases").array().notNull().default([]),
   directoryPath: text("directory_path"),
@@ -14,6 +25,9 @@ export const projects = pgTable("projects", {
 
 export const todos = pgTable("todos", {
   id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull(),
   content: text("content").notNull(),
   title: text("title").notNull(),
   memo: text("memo"),

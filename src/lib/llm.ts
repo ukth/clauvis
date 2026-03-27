@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./db";
 import { projects } from "./db/schema";
+import { eq } from "drizzle-orm";
 
 const anthropic = new Anthropic();
 
@@ -26,8 +27,9 @@ interface AnalyzedIntent {
   deleteTarget?: string;
 }
 
-export async function analyzeMessage(input: string): Promise<AnalyzedIntent> {
-  const projectList = await db.select().from(projects);
+export async function analyzeMessage(input: string, userId?: string): Promise<AnalyzedIntent> {
+  const conditions = userId ? [eq(projects.userId, userId)] : [];
+  const projectList = await db.select().from(projects).where(conditions.length > 0 ? conditions[0] : undefined);
   const projectContext = projectList
     .map((p) => `- ${p.name} (aliases: ${p.aliases.join(", ") || "없음"})`)
     .join("\n");
@@ -98,9 +100,10 @@ ${projectContext || "없음"}
 }
 
 export async function parseNaturalLanguage(
-  input: string
+  input: string,
+  userId?: string
 ): Promise<ParsedTodo> {
-  const result = await analyzeMessage(input);
+  const result = await analyzeMessage(input, userId);
   if (result.intent === "add_todo" && result.todo) {
     return result.todo;
   }

@@ -3,13 +3,15 @@ import { db } from "@/lib/db";
 import { todos, projects } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { parseNaturalLanguage } from "@/lib/llm";
+import { getUserId } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
+  const userId = getUserId(request);
   const { searchParams } = new URL(request.url);
   const projectFilter = searchParams.get("project");
   const statusFilter = searchParams.get("status");
 
-  const conditions = [];
+  const conditions = [eq(todos.userId, userId)];
   if (statusFilter) {
     conditions.push(eq(todos.status, statusFilter as "pending" | "done"));
   }
@@ -17,7 +19,7 @@ export async function GET(request: NextRequest) {
     const project = await db
       .select()
       .from(projects)
-      .where(eq(projects.name, projectFilter))
+      .where(and(eq(projects.name, projectFilter), eq(projects.userId, userId)))
       .limit(1);
     if (project.length > 0) {
       conditions.push(eq(todos.projectId, project[0].id));
@@ -42,24 +44,25 @@ export async function GET(request: NextRequest) {
     })
     .from(todos)
     .leftJoin(projects, eq(todos.projectId, projects.id))
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(desc(todos.createdAt));
 
   return NextResponse.json(result);
 }
 
 export async function POST(request: NextRequest) {
+  const userId = getUserId(request);
   const body = await request.json();
   const { content, source = "web" } = body;
 
-  const parsed = await parseNaturalLanguage(content);
+  const parsed = await parseNaturalLanguage(content, userId);
 
   let projectId: string | null = null;
   if (parsed.projectName) {
     const project = await db
       .select()
       .from(projects)
-      .where(eq(projects.name, parsed.projectName))
+      .where(and(eq(projects.name, parsed.projectName), eq(projects.userId, userId)))
       .limit(1);
     if (project.length > 0) {
       projectId = project[0].id;
@@ -69,6 +72,7 @@ export async function POST(request: NextRequest) {
   const [newTodo] = await db
     .insert(todos)
     .values({
+      userId,
       content,
       title: parsed.title,
       memo: parsed.memo,

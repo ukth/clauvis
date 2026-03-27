@@ -1,33 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { getUserId } from "@/lib/auth";
 
-export async function GET() {
-  const result = await db.select().from(projects);
+export async function GET(request: NextRequest) {
+  const userId = getUserId(request);
+  const result = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.userId, userId));
   return NextResponse.json(result);
 }
 
 export async function POST(request: NextRequest) {
+  const userId = getUserId(request);
   const body = await request.json();
   const { name, aliases = [], directoryPath = null } = body;
 
   const [project] = await db
     .insert(projects)
-    .values({ name, aliases, directoryPath })
+    .values({ userId, name, aliases, directoryPath })
     .returning();
 
   return NextResponse.json(project);
 }
 
 export async function PATCH(request: NextRequest) {
+  const userId = getUserId(request);
   const body = await request.json();
   const { id, ...updateData } = body;
 
   const [updated] = await db
     .update(projects)
     .set(updateData)
-    .where(eq(projects.id, id))
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
     .returning();
 
   if (!updated) {

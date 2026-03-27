@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { todos } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { getUserId } from "@/lib/auth";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = getUserId(request);
   const { id } = await params;
   const body = await request.json();
 
@@ -30,7 +32,7 @@ export async function PATCH(
   const [updated] = await db
     .update(todos)
     .set(updateData)
-    .where(eq(todos.id, id))
+    .where(and(eq(todos.id, id), eq(todos.userId, userId)))
     .returning();
 
   if (!updated) {
@@ -44,11 +46,12 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = getUserId(request);
   const { id } = await params;
 
   const [deleted] = await db
     .delete(todos)
-    .where(eq(todos.id, id))
+    .where(and(eq(todos.id, id), eq(todos.userId, userId)))
     .returning();
 
   if (!deleted) {

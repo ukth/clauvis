@@ -1,25 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { todos, projects } from "@/lib/db/schema";
+import { todos, projects, users } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { analyzeMessage } from "@/lib/llm";
-import { sendMessage, isAuthorizedUser, esc } from "@/lib/telegram";
+import { sendMessage, esc } from "@/lib/telegram";
+import { randomBytes } from "crypto";
 
 interface TelegramUpdate {
   message?: {
-    chat: { id: number };
+    chat: { id: number; first_name?: string; username?: string };
     text?: string;
   };
 }
 
-async function handleList(chatId: number, projectFilter?: string | null) {
-  const conditions = [eq(todos.status, "pending")];
+async function getUserByChat(chatId: number) {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.telegramChatId, String(chatId)))
+    .limit(1);
+  return user ?? null;
+}
+
+async function handleStart(chatId: number, apiKey: string) {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.apiKey, apiKey))
+    .limit(1);
+
+  if (!user) {
+    await sendMessage(chatId, esc("유효하지 않은 API 키예요."));
+    return;
+  }
+
+  await db
+    .update(users)
+    .set({ telegramChatId: String(chatId) })
+    .where(eq(users.id, user.id));
+
+  await sendMessage(chatId, esc(`${user.name}님, 연동 완료! 이제 할일을 보내보세요.`));
+}
+
+async function handleList(chatId: number, userId: string, projectFilter?: string | null) {
+  const conditions = [eq(todos.userId, userId), eq(todos.status, "pending")];
 
   if (projectFilter) {
     const project = await db
       .select()
       .from(projects)
-      .where(eq(projects.name, projectFilter))
+      .where(and(eq(projects.name, projectFilter), eq(projects.userId, userId)))
       .limit(1);
     if (project.length > 0) {
       conditions.push(eq(todos.projectId, project[0].id));
@@ -39,7 +69,7 @@ async function handleList(chatId: number, projectFilter?: string | null) {
     .orderBy(desc(todos.createdAt));
 
   if (result.length === 0) {
-    await sendMessage(chatId, "할일이 없어요! 🎉");
+    await sendMessage(chatId, "할일이 없어요\\! 🎉");
     return;
   }
 
@@ -66,13 +96,13 @@ async function handleList(chatId: number, projectFilter?: string | null) {
   await sendMessage(chatId, message);
 }
 
-async function handleComplete(chatId: number, target: string) {
+async function handleComplete(chatId: number, userId: string, target: string) {
   const num = parseInt(target);
 
   const pendingTodos = await db
     .select({ id: todos.id, title: todos.title })
     .from(todos)
-    .where(eq(todos.status, "pending"))
+    .where(and(eq(todos.userId, userId), eq(todos.status, "pending")))
     .orderBy(desc(todos.createdAt));
 
   if (!isNaN(num)) {
@@ -114,6 +144,7 @@ async function handleComplete(chatId: number, target: string) {
 
 async function handleAdd(
   chatId: number,
+  userId: string,
   content: string,
   todo: { title: string; projectName: string | null; priority: string; deadline: string | null; memo: string | null }
 ) {
@@ -122,7 +153,7 @@ async function handleAdd(
     const project = await db
       .select()
       .from(projects)
-      .where(eq(projects.name, todo.projectName))
+      .where(and(eq(projects.name, todo.projectName), eq(projects.userId, userId)))
       .limit(1);
     if (project.length > 0) {
       projectId = project[0].id;
@@ -130,6 +161,7 @@ async function handleAdd(
   }
 
   await db.insert(todos).values({
+    userId,
     content,
     title: todo.title,
     memo: todo.memo,
@@ -154,26 +186,66 @@ export async function POST(request: NextRequest) {
   const chatId = message.chat.id;
   const text = message.text.trim();
 
-  if (!isAuthorizedUser(chatId)) {
-    await sendMessage(chatId, esc("인증되지 않은 사용자입니다."));
+  // /start <api_key> 로 기존 계정 연동
+  if (text.startsWith("/start ")) {
+    const apiKey = text.replace("/start ", "").trim();
+    await handleStart(chatId, apiKey);
+    return NextResponse.json({ ok: true });
+  }
+
+  // 유저 조회, 없으면 자동 생성
+  let user = await getUserByChat(chatId);
+  if (!user) {
+    if (text === "/start") {
+      // 신규 가입
+      const apiKey = `clv_${randomBytes(24).toString("hex")}`;
+      const name = message.chat.first_name || message.chat.username || "User";
+      const [newUser] = await db
+        .insert(users)
+        .values({ name, apiKey, telegramChatId: String(chatId) })
+        .returning();
+      user = newUser;
+      await sendMessage(
+        chatId,
+        esc(`환영합니다, ${user.name}님! 🎉`) +
+        "\n\n" +
+        esc("API Key:") + "\n`" + esc(user.apiKey) + "`\n\n" +
+        esc("Claude Code MCP 연동 시 이 키를 사용하세요.") +
+        "\n" +
+        esc("이제 할일을 자유롭게 보내보세요!")
+      );
+      return NextResponse.json({ ok: true });
+    }
+    await sendMessage(chatId, esc("처음이시군요! /start 를 보내서 시작해주세요."));
+    return NextResponse.json({ ok: true });
+  }
+
+  // /start 를 이미 가입된 유저가 보낸 경우 → API key 다시 보여주기
+  if (text === "/start") {
+    await sendMessage(
+      chatId,
+      esc(`${user.name}님, 이미 가입되어 있어요.`) +
+      "\n\n" +
+      esc("API Key:") + "\n`" + esc(user.apiKey) + "`"
+    );
     return NextResponse.json({ ok: true });
   }
 
   try {
-    const analysis = await analyzeMessage(text);
+    const analysis = await analyzeMessage(text, user.id);
 
     switch (analysis.intent) {
       case "add_todo":
         if (analysis.todo) {
-          await handleAdd(chatId, text, analysis.todo);
+          await handleAdd(chatId, user.id, text, analysis.todo);
         }
         break;
       case "list":
-        await handleList(chatId, analysis.listFilter);
+        await handleList(chatId, user.id, analysis.listFilter);
         break;
       case "complete":
         if (analysis.completeTarget) {
-          await handleComplete(chatId, analysis.completeTarget);
+          await handleComplete(chatId, user.id, analysis.completeTarget);
         }
         break;
       case "add_project":
@@ -181,12 +253,13 @@ export async function POST(request: NextRequest) {
           const existing = await db
             .select()
             .from(projects)
-            .where(eq(projects.name, analysis.project.name))
+            .where(and(eq(projects.name, analysis.project.name), eq(projects.userId, user.id)))
             .limit(1);
           if (existing.length > 0) {
             await sendMessage(chatId, esc(`"${analysis.project.name}" 프로젝트는 이미 있어요.`));
           } else {
             await db.insert(projects).values({
+              userId: user.id,
               name: analysis.project.name,
               aliases: analysis.project.aliases || [],
             });
@@ -198,9 +271,12 @@ export async function POST(request: NextRequest) {
         }
         break;
       case "list_projects": {
-        const allProjects = await db.select().from(projects);
+        const allProjects = await db
+          .select()
+          .from(projects)
+          .where(eq(projects.userId, user.id));
         if (allProjects.length === 0) {
-          await sendMessage(chatId, "등록된 프로젝트가 없어요.");
+          await sendMessage(chatId, esc("등록된 프로젝트가 없어요."));
         } else {
           let msg = esc(`📁 프로젝트 ${allProjects.length}개`) + "\n\n";
           for (const p of allProjects) {
@@ -216,7 +292,7 @@ export async function POST(request: NextRequest) {
           const target = await db
             .select()
             .from(projects)
-            .where(eq(projects.name, analysis.deleteTarget))
+            .where(and(eq(projects.name, analysis.deleteTarget), eq(projects.userId, user.id)))
             .limit(1);
           if (target.length > 0) {
             await db.delete(projects).where(eq(projects.id, target[0].id));
@@ -232,7 +308,7 @@ export async function POST(request: NextRequest) {
           const pendingTodos = await db
             .select({ id: todos.id, title: todos.title })
             .from(todos)
-            .where(eq(todos.status, "pending"))
+            .where(and(eq(todos.userId, user.id), eq(todos.status, "pending")))
             .orderBy(desc(todos.createdAt));
 
           if (!isNaN(num) && num >= 1 && num <= pendingTodos.length) {

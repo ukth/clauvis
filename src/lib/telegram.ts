@@ -29,7 +29,3 @@ export async function sendMessage(chatId: number, text: string) {
 
 export { escapeMarkdownV2 as esc };
 
-export function isAuthorizedUser(chatId: number): boolean {
-  const authorizedId = process.env.TELEGRAM_AUTHORIZED_USER_ID;
-  return authorizedId ? chatId === Number(authorizedId) : false;
-}

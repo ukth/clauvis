@@ -213,7 +213,7 @@ echo "   (.git이 있는 폴더를 프로젝트로 등록합니다)"
 echo ""
 
 while true; do
-  read -p "프로젝트 경로를 입력하세요 (완료하려면 엔터): " PROJECT_INPUT
+  read -p "프로젝트 경로를 입력하세요 (폴더 드래그 가능, 완료하려면 엔터): " PROJECT_INPUT
 
   # 빈 입력이면 종료
   [ -z "$PROJECT_INPUT" ] && break

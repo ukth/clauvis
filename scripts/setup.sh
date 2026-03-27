@@ -65,13 +65,31 @@ print(u.replace('/api/mcp',''))
 
 [ -z "$URL" ] && exit 0
 
+# 1. .clauvis/config.md에서 프로젝트명 확인
 PROJECT=""
-for f in CLAUDE.md .claude/CLAUDE.md; do
-  if [ -f "$f" ]; then
-    P=$(grep -m1 "clauvis-project:" "$f" 2>/dev/null | sed 's/.*clauvis-project:[[:space:]]*//')
-    [ -n "$P" ] && PROJECT="$P" && break
+if [ -f ".clauvis/config.md" ]; then
+  PROJECT=$(grep -m1 "clauvis-project:" .clauvis/config.md 2>/dev/null | sed 's/.*clauvis-project:[[:space:]]*//')
+fi
+
+# 2. 없으면 현재 디렉토리로 프로젝트 자동 매칭
+if [ -z "$PROJECT" ]; then
+  CWD=$(pwd)
+  MATCH=$(curl -s -H "Authorization: Bearer $API_KEY" "$URL/api/projects" 2>/dev/null | python3 -c "
+import sys, json
+cwd = '$CWD'
+projects = json.load(sys.stdin)
+for p in projects:
+    dp = p.get('directoryPath')
+    if dp and (cwd == dp or cwd.startswith(dp + '/')):
+        print(p['name'])
+        break
+" 2>/dev/null)
+  if [ -n "$MATCH" ]; then
+    PROJECT="$MATCH"
+    mkdir -p .clauvis
+    echo "clauvis-project: $PROJECT" > .clauvis/config.md
   fi
-done
+fi
 
 if [ -n "$PROJECT" ]; then
   TODOS=$(curl -s -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending&project=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PROJECT'))")" 2>/dev/null)

@@ -18,7 +18,7 @@ echo "  👉 https://t.me/ukth_clauvis_bot 에서 /start"
 echo ""
 
 # 1. API Key 입력
-read -p "API Key를 입력하세요 (clv_...): " API_KEY
+read -p "API Key를 입력하세요 (clv_...): " API_KEY < /dev/tty
 
 if [[ ! "$API_KEY" =~ ^clv_ ]]; then
   echo "❌ 유효하지 않은 API Key입니다. clv_로 시작해야 합니다."
@@ -213,7 +213,7 @@ echo "   (.git이 있는 폴더를 프로젝트로 등록합니다)"
 echo ""
 
 while true; do
-  read -p "프로젝트 경로를 입력하세요 (폴더 드래그 가능, 완료하려면 엔터): " PROJECT_INPUT
+  read -p "프로젝트 경로를 입력하세요 (폴더 드래그 가능, 완료하려면 엔터): " PROJECT_INPUT < /dev/tty
 
   # 빈 입력이면 종료
   [ -z "$PROJECT_INPUT" ] && break

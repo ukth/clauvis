@@ -3,6 +3,7 @@ import { pgTable, uuid, text, timestamp, pgEnum, unique } from "drizzle-orm/pg-c
 export const priorityEnum = pgEnum("priority", ["urgent", "normal", "low"]);
 export const statusEnum = pgEnum("status", ["pending", "done"]);
 export const sourceEnum = pgEnum("source", ["telegram", "web", "mcp"]);
+export const messageRoleEnum = pgEnum("message_role", ["user", "assistant"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -42,4 +43,14 @@ export const todos = pgTable("todos", {
   source: sourceEnum("source").notNull().default("web"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   completedAt: timestamp("completed_at"),
+});
+
+export const chatMessages = pgTable("chat_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull(),
+  role: messageRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });

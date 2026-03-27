@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { sendMessage, esc } from "@/lib/telegram";
+import { sendMessage, sendTyping, esc } from "@/lib/telegram";
 import { runAgent, saveMessage } from "@/lib/agent";
 import { randomBytes } from "crypto";
 
@@ -110,6 +110,9 @@ export async function POST(request: NextRequest) {
   try {
     // Save user message to chat history
     await saveMessage(user.id, "user", text);
+
+    // Show typing indicator
+    await sendTyping(chatId);
 
     // Run the agent
     const response = await runAgent(text, user.id);

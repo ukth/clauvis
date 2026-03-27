@@ -29,3 +29,11 @@ export async function sendMessage(chatId: number, text: string) {
 
 export { escapeMarkdownV2 as esc };
 
+export async function sendTyping(chatId: number) {
+  await fetch(`${TELEGRAM_API}/sendChatAction`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, action: "typing" }),
+  });
+}
+

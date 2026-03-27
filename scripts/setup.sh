@@ -1,6 +1,6 @@
 #!/bin/bash
 # Clauvis Setup Script
-# Usage: curl -s https://raw.githubusercontent.com/ukth/clauvis/main/scripts/setup.sh | bash
+# Usage: bash <(curl -sL https://raw.githubusercontent.com/ukth/clauvis/main/scripts/setup.sh)
 
 set -e
 

@@ -204,6 +204,55 @@ else
 fi
 
 echo ""
+echo "✅ 기본 설정 완료!"
+
+# 5. 프로젝트 자동 등록
+echo ""
+read -p "작업 폴더를 스캔해서 프로젝트를 등록할까요? (y/n): " SCAN_PROJECTS
+
+if [[ "$SCAN_PROJECTS" =~ ^[yY] ]]; then
+  read -p "워크스페이스 경로를 입력하세요 (예: ~/Workspace/DEV): " WORKSPACE_DIR
+  WORKSPACE_DIR=$(eval echo "$WORKSPACE_DIR")
+
+  if [ -d "$WORKSPACE_DIR" ]; then
+    echo ""
+    echo "프로젝트 스캔 중..."
+
+    # .git이 있는 디렉토리를 프로젝트로 간주 (depth 3)
+    find "$WORKSPACE_DIR" -maxdepth 3 -name ".git" -type d 2>/dev/null | while read gitdir; do
+      PROJECT_DIR=$(dirname "$gitdir")
+      PROJECT_NAME=$(basename "$PROJECT_DIR")
+
+      # 이미 등록된 프로젝트 건너뛰기
+      EXISTS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
+import sys, json
+projects = json.load(sys.stdin)
+for p in projects:
+    if p.get('directoryPath') == '$PROJECT_DIR':
+        print('yes')
+        break
+" 2>/dev/null)
+
+      if [ "$EXISTS" = "yes" ]; then
+        continue
+      fi
+
+      curl -s -X POST "$CLAUVIS_URL/api/projects" \
+        -H "Authorization: Bearer $API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$(python3 -c "import json; print(json.dumps({'name': '$PROJECT_NAME', 'aliases': [], 'directoryPath': '$PROJECT_DIR'}))")" > /dev/null 2>&1
+
+      echo "  ✓ $PROJECT_NAME ($PROJECT_DIR)"
+    done
+
+    echo ""
+    echo "프로젝트 등록 완료!"
+  else
+    echo "❌ 디렉토리를 찾을 수 없습니다: $WORKSPACE_DIR"
+  fi
+fi
+
+echo ""
 echo "✅ Clauvis 설정 완료!"
 echo ""
 echo "설치된 항목:"
@@ -214,7 +263,6 @@ echo ""
 echo "사용법:"
 echo "  1. Claude Code를 재시작하세요"
 echo "  2. 아무 메시지나 보내면 할일이 자동으로 표시됩니다"
-echo "  3. 프로젝트별 필터링: 프로젝트 CLAUDE.md에 아래 추가"
-echo "     clauvis-project: 프로젝트명"
+echo "  3. 각 프로젝트에서 실행하면 해당 프로젝트 할일만 표시됩니다"
 echo ""
 echo "텔레그램 봇: https://t.me/ukth_clauvis_bot"

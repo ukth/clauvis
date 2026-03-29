@@ -24,13 +24,13 @@ Rules:
 const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "list_todos",
-    description: "할일 목록을 조회합니다. 프로젝트별로 그룹화하여 반환합니다.",
+    description: "List todos, grouped by project.",
     input_schema: {
       type: "object" as const,
       properties: {
         project_slug: {
           type: "string",
-          description: "특정 프로젝트의 할일만 조회할 때 프로젝트 slug",
+          description: "Filter by project slug (optional)",
         },
       },
       required: [],
@@ -38,46 +38,46 @@ const toolDefinitions: Anthropic.Tool[] = [
   },
   {
     name: "add_todo",
-    description: "새 할일을 추가합니다.",
+    description: "Add a new todo.",
     input_schema: {
       type: "object" as const,
       properties: {
-        title: { type: "string", description: "할일 제목 (정리된 형태)" },
+        title: { type: "string", description: "Todo title (cleaned up)" },
         project_slug: {
           type: "string",
-          description: "프로젝트 slug (등록된 프로젝트 중 매칭되는 것)",
+          description: "Project slug (match from registered projects)",
         },
         priority: {
           type: "string",
           enum: ["urgent", "normal", "low"],
-          description: "우선순위",
+          description: "Priority level",
         },
         deadline: {
           type: "string",
-          description: "마감일 (YYYY-MM-DD 형식)",
+          description: "Deadline (YYYY-MM-DD format)",
         },
-        memo: { type: "string", description: "부가 설명" },
+        memo: { type: "string", description: "Additional notes" },
       },
       required: ["title"],
     },
   },
   {
     name: "complete_todo",
-    description: "할일을 완료 처리합니다. 프로젝트명과 번호, 또는 할일 제목의 일부로 지정합니다.",
+    description: "Mark a todo as done. Specify by project slug + number, or by keyword in the title.",
     input_schema: {
       type: "object" as const,
       properties: {
         project_slug: {
           type: "string",
-          description: "프로젝트 slug (번호로 지정할 때 필요)",
+          description: "Project slug (needed when using number)",
         },
         number: {
           type: "number",
-          description: "프로젝트 내 할일 번호 (list_todos 결과의 번호)",
+          description: "Todo number from list_todos results",
         },
         keyword: {
           type: "string",
-          description: "할일 제목에 포함된 키워드 (번호 대신 사용)",
+          description: "Keyword in todo title (alternative to number)",
         },
       },
       required: [],
@@ -85,21 +85,21 @@ const toolDefinitions: Anthropic.Tool[] = [
   },
   {
     name: "delete_todo",
-    description: "할일을 삭제합니다. 프로젝트명과 번호, 또는 할일 제목의 일부로 지정합니다.",
+    description: "Delete a todo. Specify by project slug + number, or by keyword in the title.",
     input_schema: {
       type: "object" as const,
       properties: {
         project_slug: {
           type: "string",
-          description: "프로젝트 slug (번호로 지정할 때 필요)",
+          description: "Project slug (needed when using number)",
         },
         number: {
           type: "number",
-          description: "프로젝트 내 할일 번호",
+          description: "Todo number",
         },
         keyword: {
           type: "string",
-          description: "할일 제목에 포함된 키워드 (번호 대신 사용)",
+          description: "Keyword in todo title (alternative to number)",
         },
       },
       required: [],
@@ -107,37 +107,37 @@ const toolDefinitions: Anthropic.Tool[] = [
   },
   {
     name: "update_todo",
-    description: "기존 할일의 메모, 제목, 우선순위, 기한 등을 수정합니다.",
+    description: "Update a todo's title, memo, priority, or deadline.",
     input_schema: {
       type: "object" as const,
       properties: {
         project_slug: {
           type: "string",
-          description: "프로젝트 slug (번호로 지정할 때 필요)",
+          description: "Project slug (needed when using number)",
         },
         number: {
           type: "number",
-          description: "프로젝트 내 할일 번호",
+          description: "Todo number",
         },
         keyword: {
           type: "string",
-          description: "할일 제목에 포함된 키워드 (번호 대신 사용)",
+          description: "Keyword in todo title (alternative to number)",
         },
-        title: { type: "string", description: "변경할 제목" },
-        memo: { type: "string", description: "변경할 메모" },
+        title: { type: "string", description: "New title" },
+        memo: { type: "string", description: "New memo" },
         priority: {
           type: "string",
           enum: ["urgent", "normal", "low"],
-          description: "변경할 우선순위",
+          description: "New priority",
         },
-        deadline: { type: "string", description: "변경할 기한 (YYYY-MM-DD)" },
+        deadline: { type: "string", description: "New deadline (YYYY-MM-DD)" },
       },
       required: [],
     },
   },
   {
     name: "list_projects",
-    description: "등록된 프로젝트 목록을 조회합니다.",
+    description: "List all registered projects.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -146,26 +146,26 @@ const toolDefinitions: Anthropic.Tool[] = [
   },
   {
     name: "add_project",
-    description: "새 프로젝트를 추가합니다.",
+    description: "Add a new project.",
     input_schema: {
       type: "object" as const,
       properties: {
         slug: {
           type: "string",
-          description: "프로젝트 slug (영문 소문자, 하이픈)",
+          description: "Project slug (lowercase, hyphens)",
         },
-        name: { type: "string", description: "프로젝트 표시 이름" },
+        name: { type: "string", description: "Display name" },
       },
       required: ["slug"],
     },
   },
   {
     name: "delete_project",
-    description: "프로젝트를 삭제합니다.",
+    description: "Delete a project.",
     input_schema: {
       type: "object" as const,
       properties: {
-        slug: { type: "string", description: "삭제할 프로젝트의 slug" },
+        slug: { type: "string", description: "Slug of the project to delete" },
       },
       required: ["slug"],
     },
@@ -205,25 +205,25 @@ async function execListTodos(
     .orderBy(desc(todos.createdAt));
 
   if (result.length === 0) {
-    return "할일이 없습니다.";
+    return "No todos.";
   }
 
   const grouped: Record<string, { display: string; items: typeof result }> = {};
   for (const todo of result) {
-    const slug = todo.projectSlug || "미분류";
+    const slug = todo.projectSlug || "Uncategorized";
     const display = todo.projectName ? `${todo.projectName}[${slug}]` : slug;
     if (!grouped[slug]) grouped[slug] = { display, items: [] };
     grouped[slug].items.push(todo);
   }
 
-  let message = `총 ${result.length}개의 할일:\n`;
+  let message = `${result.length} todos:\n`;
   for (const [, group] of Object.entries(grouped)) {
     message += `\n[${group.display}]\n`;
     const items = group.items;
     let index = 1;
     for (const item of items) {
       const deadlineStr = item.deadline
-        ? ` (기한: ${item.deadline.toISOString().split("T")[0]})`
+        ? ` (deadline: ${item.deadline.toISOString().split("T")[0]})`
         : "";
       const priorityStr = item.priority !== "normal" ? ` [${item.priority}]` : "";
       message += `${index}. ${item.title}${priorityStr}${deadlineStr}\n`;
@@ -269,9 +269,9 @@ async function execAddTodo(
 
   const projectLabel = projectDisplayName
     ? `${projectDisplayName}[${input.project_slug}]`
-    : input.project_slug || "미분류";
-  const memoStr = input.memo ? `\n메모: ${input.memo}` : "";
-  return `할일 추가 완료: [${projectLabel}] ${input.title}${memoStr}`;
+    : input.project_slug || "Uncategorized";
+  const memoStr = input.memo ? `\nmemo: ${input.memo}` : "";
+  return `Added: [${projectLabel}] ${input.title}${memoStr}`;
 }
 
 async function execCompleteTodo(
@@ -292,7 +292,7 @@ async function execCompleteTodo(
 
   const todo = findTodoByInput(pendingTodos, input);
   if (!todo) {
-    return "해당하는 할일을 찾지 못했습니다.";
+    return "Todo not found.";
   }
 
   await db
@@ -301,7 +301,7 @@ async function execCompleteTodo(
     .where(eq(todos.id, todo.id));
 
   const remaining = pendingTodos.length - 1;
-  return `완료: ${todo.title} (남은 할일 ${remaining}개)`;
+  return `Done: ${todo.title} (${remaining} remaining)`;
 }
 
 async function execDeleteTodo(
@@ -322,11 +322,11 @@ async function execDeleteTodo(
 
   const todo = findTodoByInput(pendingTodos, input);
   if (!todo) {
-    return "해당하는 할일을 찾지 못했습니다.";
+    return "Todo not found.";
   }
 
   await db.delete(todos).where(eq(todos.id, todo.id));
-  return `삭제: ${todo.title}`;
+  return `Deleted: ${todo.title}`;
 }
 
 async function execUpdateTodo(
@@ -347,7 +347,7 @@ async function execUpdateTodo(
 
   const todo = findTodoByInput(pendingTodos, input);
   if (!todo) {
-    return "해당하는 할일을 찾지 못했습니다.";
+    return "Todo not found.";
   }
 
   const updateData: Record<string, unknown> = {};
@@ -359,7 +359,7 @@ async function execUpdateTodo(
   await db.update(todos).set(updateData).where(eq(todos.id, todo.id));
 
   const fields = Object.keys(updateData).join(", ");
-  return `수정 완료: ${todo.title} (${fields})`;
+  return `Updated: ${todo.title} (${fields})`;
 }
 
 function findTodoByInput(
@@ -405,10 +405,10 @@ async function execListProjects(userId: string): Promise<string> {
     .where(eq(projects.userId, userId));
 
   if (allProjects.length === 0) {
-    return "등록된 프로젝트가 없습니다.";
+    return "No projects registered.";
   }
 
-  let msg = `프로젝트 ${allProjects.length}개:\n`;
+  let msg = `${allProjects.length} projects:\n`;
   for (const p of allProjects) {
     msg += `- ${p.name || p.slug}\n`;
   }
@@ -427,7 +427,7 @@ async function execAddProject(
 
   if (existing) {
     const displayName = existing.name || existing.slug;
-    return `"${displayName}" 프로젝트는 이미 있습니다.`;
+    return `Project "${displayName}" already exists.`;
   }
 
   await db.insert(projects).values({
@@ -437,7 +437,7 @@ async function execAddProject(
   });
 
   const displayName = input.name || input.slug;
-  return `프로젝트 추가 완료: ${displayName}`;
+  return `Project added: ${displayName}`;
 }
 
 async function execDeleteProject(
@@ -451,11 +451,11 @@ async function execDeleteProject(
     .limit(1);
 
   if (!target) {
-    return `"${input.slug}" 프로젝트를 찾지 못했습니다.`;
+    return `Project "${input.slug}" not found.`;
   }
 
   await db.delete(projects).where(eq(projects.id, target.id));
-  return `프로젝트 삭제 완료: ${target.name || target.slug}`;
+  return `Project deleted: ${target.name || target.slug}`;
 }
 
 // --- Tool dispatcher ---
@@ -495,7 +495,7 @@ async function executeTool(
     case "delete_project":
       return execDeleteProject(userId, toolInput as { slug: string });
     default:
-      return `알 수 없는 도구: ${toolName}`;
+      return `Unknown tool: ${toolName}`;
   }
 }
 
@@ -556,10 +556,10 @@ export async function runAgent(
 
   const systemPrompt = `${SYSTEM_PROMPT}
 
-오늘 날짜: ${today}
+Today: ${today}
 
-등록된 프로젝트:
-${projectContext || "없음"}`;
+Registered projects:
+${projectContext || "None"}`;
 
   // Load conversation history
   const history = await getRecentMessages(userId);
@@ -593,7 +593,7 @@ ${projectContext || "없음"}`;
 
     if (toolUseBlocks.length === 0) {
       // No tool use - return the text response
-      return textBlocks.map((b) => b.text).join("\n") || "네, 알겠어요!";
+      return textBlocks.map((b) => b.text).join("\n") || "Got it!";
     }
 
     // Process tool calls
@@ -623,5 +623,5 @@ ${projectContext || "없음"}`;
     }
   }
 
-  return "처리 중 최대 반복 횟수에 도달했어요. 다시 시도해주세요.";
+  return "Max iterations reached. Please try again.";
 }

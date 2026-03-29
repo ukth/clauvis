@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./db";
 import { todos, projects, users, chatMessages } from "./db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { getNextTodoNumber } from "./db/utils";
 import { esc } from "./telegram";
 
 const SYSTEM_PROMPT = `당신은 할일 관리 비서 Clauvis입니다. 사용자의 메시지에 따라 적절한 도구를 사용하거나, 일상적인 대화에는 직접 응답하세요.
@@ -253,8 +254,10 @@ async function execAddTodo(
     }
   }
 
+  const number = await getNextTodoNumber(userId);
   await db.insert(todos).values({
     userId,
+    number,
     content: originalMessage,
     title: input.title,
     memo: input.memo || null,

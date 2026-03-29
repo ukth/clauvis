@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, pgEnum, unique } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, pgEnum, unique, integer } from "drizzle-orm/pg-core";
 
 export const priorityEnum = pgEnum("priority", ["urgent", "normal", "low"]);
 export const statusEnum = pgEnum("status", ["pending", "done"]);
@@ -33,6 +33,7 @@ export const todos = pgTable("todos", {
   userId: uuid("user_id")
     .references(() => users.id)
     .notNull(),
+  number: integer("number").notNull(),
   content: text("content").notNull(),
   title: text("title").notNull(),
   memo: text("memo"),

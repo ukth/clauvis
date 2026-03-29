@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { todos, projects } from "@/lib/db/schema";
 import { eq, and, desc, or } from "drizzle-orm";
 import { getUserId } from "@/lib/auth";
+import { getNextTodoNumber } from "@/lib/db/utils";
 
 export async function GET(request: NextRequest) {
   const userId = getUserId(request);
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
     .insert(todos)
     .values({
       userId,
+      number: await getNextTodoNumber(userId),
       content: title,
       title,
       memo: memo ?? null,

@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { todos, projects, users } from "./db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { getNextTodoNumber } from "./db/utils";
 
 const VALID_MODELS = ["haiku", "sonnet", "opus"] as const;
 
@@ -26,6 +27,8 @@ export async function handleCommand(
         return await cmdDone(args, userId);
       case "/del":
         return await cmdDel(args, userId);
+      case "/view":
+        return await cmdView(args, userId);
       case "/newproject":
         return await cmdNewProject(args, userId);
       case "/projects":
@@ -56,7 +59,6 @@ async function findProject(userId: string, slugOrAlias: string) {
 
   if (bySlug) return bySlug;
 
-  // Try alias or name match
   const allProjects = await db
     .select()
     .from(projects)
@@ -69,49 +71,28 @@ async function findProject(userId: string, slugOrAlias: string) {
   );
 }
 
-interface PendingTodo {
-  id: string;
-  title: string;
-  priority: "urgent" | "normal" | "low";
-  deadline: Date | null;
-  projectName: string | null;
-  projectSlug: string | null;
-}
 
-async function getGroupedPendingTodos(userId: string) {
-  const result = await db
+async function findTodoByNumber(userId: string, num: number) {
+  const [todo] = await db
     .select({
       id: todos.id,
+      number: todos.number,
       title: todos.title,
+      memo: todos.memo,
       priority: todos.priority,
       deadline: todos.deadline,
+      status: todos.status,
+      source: todos.source,
       projectName: projects.name,
       projectSlug: projects.slug,
+      createdAt: todos.createdAt,
+      completedAt: todos.completedAt,
     })
     .from(todos)
     .leftJoin(projects, eq(todos.projectId, projects.id))
-    .where(and(eq(todos.userId, userId), eq(todos.status, "pending")))
-    .orderBy(desc(todos.createdAt));
-
-  // Group by project, preserving insertion order
-  const grouped = new Map<
-    string,
-    { display: string; items: PendingTodo[] }
-  >();
-  for (const todo of result) {
-    const key = todo.projectSlug || "__none__";
-    const display = todo.projectName || todo.projectSlug || "미분류";
-    if (!grouped.has(key)) grouped.set(key, { display, items: [] });
-    grouped.get(key)!.items.push(todo);
-  }
-
-  // Flatten in grouped order for consistent global numbering
-  const ordered: PendingTodo[] = [];
-  for (const [, group] of grouped) {
-    ordered.push(...group.items);
-  }
-
-  return { grouped, ordered };
+    .where(and(eq(todos.userId, userId), eq(todos.number, num)))
+    .limit(1);
+  return todo || null;
 }
 
 // --- Command handlers ---
@@ -121,7 +102,6 @@ async function cmdAdd(args: string[], userId: string, rawText: string): Promise<
     return "사용법: /add 할일 내용 #프로젝트\n\n줄바꿈 이후는 메모로 저장됩니다.";
   }
 
-  // Split by newline: first line = title + project, rest = memo
   const commandRemoved = rawText.replace(/^\/add(@\S+)?\s*/, "");
   const lines = commandRemoved.split("\n");
   const firstLine = lines[0].trim();
@@ -155,8 +135,11 @@ async function cmdAdd(args: string[], userId: string, rawText: string): Promise<
     projectDisplay = project.name || project.slug;
   }
 
+  const number = await getNextTodoNumber(userId);
+
   await db.insert(todos).values({
     userId,
+    number,
     content: title,
     title,
     memo,
@@ -166,71 +149,60 @@ async function cmdAdd(args: string[], userId: string, rawText: string): Promise<
 
   const label = projectDisplay ? ` [${projectDisplay}]` : "";
   const memoStr = memo ? `\n📝 ${memo}` : "";
-  return `✅ ${title}${label}${memoStr}`;
+  return `✅ #${number} ${title}${label}${memoStr}`;
 }
 
 async function cmdList(args: string[], userId: string): Promise<string> {
   const projectSlug = args[0]?.toLowerCase();
+
+  const conditions = [eq(todos.userId, userId), eq(todos.status, "pending")];
 
   if (projectSlug) {
     const project = await findProject(userId, projectSlug);
     if (!project) {
       return `"${projectSlug}" 프로젝트를 찾을 수 없어요.`;
     }
-
-    const result = await db
-      .select({
-        id: todos.id,
-        title: todos.title,
-        priority: todos.priority,
-        deadline: todos.deadline,
-      })
-      .from(todos)
-      .where(
-        and(
-          eq(todos.userId, userId),
-          eq(todos.status, "pending"),
-          eq(todos.projectId, project.id)
-        )
-      )
-      .orderBy(desc(todos.createdAt));
-
-    if (result.length === 0) {
-      return `[${project.name || project.slug}] 할일이 없어요! 🎉`;
-    }
-
-    let msg = `📋 [${project.name || project.slug}] 할일 ${result.length}개\n\n`;
-    result.forEach((item, i) => {
-      const priority =
-        item.priority !== "normal" ? ` [${item.priority}]` : "";
-      const deadline = item.deadline
-        ? ` (${item.deadline.toISOString().split("T")[0]})`
-        : "";
-      msg += `${i + 1}. ${item.title}${priority}${deadline}\n`;
-    });
-    return msg;
+    conditions.push(eq(todos.projectId, project.id));
   }
 
-  // All todos, grouped by project
-  const { grouped, ordered } = await getGroupedPendingTodos(userId);
+  const result = await db
+    .select({
+      number: todos.number,
+      title: todos.title,
+      priority: todos.priority,
+      deadline: todos.deadline,
+      projectName: projects.name,
+      projectSlug: projects.slug,
+    })
+    .from(todos)
+    .leftJoin(projects, eq(todos.projectId, projects.id))
+    .where(and(...conditions))
+    .orderBy(desc(todos.createdAt));
 
-  if (ordered.length === 0) {
-    return "할일이 없어요! 🎉";
+  if (result.length === 0) {
+    const label = projectSlug ? `[${projectSlug}] ` : "";
+    return `${label}할일이 없어요! 🎉`;
   }
 
-  let globalNum = 1;
-  let msg = `📋 할일 ${ordered.length}개\n`;
+  // Group by project for display
+  const grouped = new Map<string, { display: string; items: typeof result }>();
+  for (const todo of result) {
+    const key = todo.projectSlug || "__none__";
+    const display = todo.projectName || todo.projectSlug || "미분류";
+    if (!grouped.has(key)) grouped.set(key, { display, items: [] });
+    grouped.get(key)!.items.push(todo);
+  }
+
+  let msg = `📋 할일 ${result.length}개\n`;
 
   for (const [, group] of grouped) {
     msg += `\n[${group.display}]\n`;
     for (const item of group.items) {
-      const priority =
-        item.priority !== "normal" ? ` [${item.priority}]` : "";
+      const priority = item.priority !== "normal" ? ` [${item.priority}]` : "";
       const deadline = item.deadline
         ? ` (${item.deadline.toISOString().split("T")[0]})`
         : "";
-      msg += `${globalNum}. ${item.title}${priority}${deadline}\n`;
-      globalNum++;
+      msg += `#${item.number}. ${item.title}${priority}${deadline}\n`;
     }
   }
 
@@ -239,18 +211,20 @@ async function cmdList(args: string[], userId: string): Promise<string> {
 
 async function cmdDone(args: string[], userId: string): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /done 번호 또는 /done 프로젝트 번호";
+    return "사용법: /done 번호";
   }
 
-  const { grouped, ordered } = await getGroupedPendingTodos(userId);
-
-  if (ordered.length === 0) {
-    return "할일이 없어요.";
+  const num = parseInt(args[0]);
+  if (isNaN(num)) {
+    return "올바른 번호를 입력해주세요.";
   }
 
-  const todo = resolveTarget(args, grouped, ordered);
+  const todo = await findTodoByNumber(userId, num);
   if (!todo) {
-    return "해당 번호의 할일을 찾을 수 없어요. /list 로 확인하세요.";
+    return `#${num} 할일을 찾을 수 없어요.`;
+  }
+  if (todo.status === "done") {
+    return `#${num} ${todo.title}은(는) 이미 완료되었어요.`;
   }
 
   await db
@@ -258,58 +232,62 @@ async function cmdDone(args: string[], userId: string): Promise<string> {
     .set({ status: "done", completedAt: new Date() })
     .where(eq(todos.id, todo.id));
 
-  return `✅ 완료: ${todo.title} (남은 할일 ${ordered.length - 1}개)`;
+  return `✅ 완료: #${num} ${todo.title}`;
 }
 
 async function cmdDel(args: string[], userId: string): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /del 번호 또는 /del 프로젝트 번호";
+    return "사용법: /del 번호";
   }
 
-  const { grouped, ordered } = await getGroupedPendingTodos(userId);
-
-  if (ordered.length === 0) {
-    return "할일이 없어요.";
+  const num = parseInt(args[0]);
+  if (isNaN(num)) {
+    return "올바른 번호를 입력해주세요.";
   }
 
-  const todo = resolveTarget(args, grouped, ordered);
+  const todo = await findTodoByNumber(userId, num);
   if (!todo) {
-    return "해당 번호의 할일을 찾을 수 없어요. /list 로 확인하세요.";
+    return `#${num} 할일을 찾을 수 없어요.`;
   }
 
   await db.delete(todos).where(eq(todos.id, todo.id));
 
-  return `🗑 삭제: ${todo.title}`;
+  return `🗑 삭제: #${num} ${todo.title}`;
 }
 
-function resolveTarget(
-  args: string[],
-  grouped: Map<string, { display: string; items: PendingTodo[] }>,
-  ordered: PendingTodo[]
-): PendingTodo | null {
-  // /done 3 (global number)
-  if (args.length === 1) {
-    const num = parseInt(args[0]);
-    if (!isNaN(num) && num >= 1 && num <= ordered.length) {
-      return ordered[num - 1];
-    }
-    return null;
+async function cmdView(args: string[], userId: string): Promise<string> {
+  if (args.length === 0) {
+    return "사용법: /view 번호";
   }
 
-  // /done project 2 (project-scoped number)
-  if (args.length >= 2) {
-    const slug = args[0].toLowerCase();
-    const num = parseInt(args[1]);
-    if (isNaN(num) || num < 1) return null;
-
-    const group = grouped.get(slug);
-    if (group && num <= group.items.length) {
-      return group.items[num - 1];
-    }
-    return null;
+  const num = parseInt(args[0]);
+  if (isNaN(num)) {
+    return "올바른 번호를 입력해주세요.";
   }
 
-  return null;
+  const todo = await findTodoByNumber(userId, num);
+  if (!todo) {
+    return `#${num} 할일을 찾을 수 없어요.`;
+  }
+
+  const project = todo.projectName || todo.projectSlug || "미분류";
+  const priority = todo.priority !== "normal" ? `\n우선순위: ${todo.priority}` : "";
+  const deadline = todo.deadline
+    ? `\n기한: ${todo.deadline.toISOString().split("T")[0]}`
+    : "";
+  const memo = todo.memo ? `\n\n📝 ${todo.memo}` : "";
+  const status = todo.status === "done" ? "완료" : "진행중";
+  const completed = todo.completedAt
+    ? `\n완료일: ${todo.completedAt.toISOString().split("T")[0]}`
+    : "";
+  const created = todo.createdAt.toISOString().split("T")[0];
+
+  return `#${num} ${todo.title}
+
+프로젝트: ${project}
+상태: ${status}${priority}${deadline}
+생성일: ${created}${completed}
+출처: ${todo.source}${memo}`;
 }
 
 async function cmdNewProject(
@@ -428,6 +406,7 @@ function cmdHelp(): string {
 [할일 관리]
 • /add 할일 내용 #프로젝트 - 할일 추가 (줄바꿈 후 메모)
 • /list [프로젝트] - 할일 목록
+• /view 번호 - 할일 상세 조회
 • /done 번호 - 할일 완료
 • /del 번호 - 할일 삭제
 
@@ -444,6 +423,6 @@ function cmdHelp(): string {
 [예시]
 /add 이미지 버그 수정 #mosun
 /list mosun
-/done 1
-/done mosun 2`;
+/view 42
+/done 42`;
 }

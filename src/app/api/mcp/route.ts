@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { todos, projects, users } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { getNextTodoNumber } from "@/lib/db/utils";
 
 function createServer(userId: string) {
   const server = new McpServer(
@@ -123,6 +124,7 @@ function createServer(userId: string) {
         .insert(todos)
         .values({
           userId,
+          number: await getNextTodoNumber(userId),
           content: title,
           title,
           memo: memo ?? null,

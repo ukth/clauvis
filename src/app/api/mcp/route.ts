@@ -16,17 +16,16 @@ function createServer(userId: string) {
     "list_todos",
     {
       title: "List Todos",
-      description:
-        "할일 목록을 조회합니다. project로 필터링 가능합니다.",
+      description: "List todos, optionally filtered by project.",
       inputSchema: {
         project: z
           .string()
           .optional()
-          .describe("프로젝트명으로 필터링 (없으면 전체)"),
+          .describe("Filter by project slug (optional)"),
         status: z
           .enum(["pending", "done"])
           .optional()
-          .describe("상태 필터 (기본: pending)"),
+          .describe("Status filter (default: pending)"),
       },
     },
     async ({ project, status = "pending" }) => {
@@ -66,13 +65,13 @@ function createServer(userId: string) {
         .orderBy(desc(todos.createdAt));
 
       if (result.length === 0) {
-        return { content: [{ type: "text" as const, text: "할일이 없습니다." }] };
+        return { content: [{ type: "text" as const, text: "No todos." }] };
       }
 
       const text = result
         .map((t) => {
           const deadline = t.deadline
-            ? ` (기한: ${t.deadline.toISOString().split("T")[0]})`
+            ? ` (deadline: ${t.deadline.toISOString().split("T")[0]})`
             : "";
           const proj = (t.projectName || t.projectSlug) ? `[${t.projectName || t.projectSlug}] ` : "";
           return `#${t.number}. ${proj}${t.title}${deadline}`;
@@ -81,7 +80,7 @@ function createServer(userId: string) {
 
       return {
         content: [
-          { type: "text" as const, text: `할일 ${result.length}개:\n${text}` },
+          { type: "text" as const, text: `${result.length} todos:\n${text}` },
         ],
       };
     }
@@ -91,18 +90,18 @@ function createServer(userId: string) {
     "add_todo",
     {
       title: "Add Todo",
-      description: "새 할일을 추가합니다.",
+      description: "Add a new todo.",
       inputSchema: {
-        title: z.string().describe("할일 제목"),
-        project: z.string().optional().describe("프로젝트 slug"),
-        priority: z.enum(["urgent", "normal", "low"]).optional().describe("우선순위 (기본: normal)"),
-        deadline: z.string().optional().describe("마감일 (YYYY-MM-DD)"),
-        memo: z.string().optional().describe("메모"),
+        title: z.string().describe("Todo title"),
+        project: z.string().optional().describe("Project slug"),
+        priority: z.enum(["urgent", "normal", "low"]).optional().describe("Priority (default: normal)"),
+        deadline: z.string().optional().describe("Deadline (YYYY-MM-DD)"),
+        memo: z.string().optional().describe("Memo"),
       },
     },
     async ({ title, project, priority, deadline, memo }) => {
       let projectId: string | null = null;
-      let projectLabel = "미분류";
+      let projectLabel = "Uncategorized";
 
       if (project) {
         const proj = await db
@@ -140,7 +139,7 @@ function createServer(userId: string) {
         content: [
           {
             type: "text" as const,
-            text: `${projectLabel} > ${newTodo.title} 추가했습니다.`,
+            text: `Added: ${projectLabel} > ${newTodo.title}`,
           },
         ],
       };
@@ -151,12 +150,11 @@ function createServer(userId: string) {
     "complete_todo",
     {
       title: "Complete Todo",
-      description:
-        "할일을 완료 처리합니다. 할일 고유 번호(#number) 또는 제목 키워드로 지정합니다.",
+      description: "Mark a todo as done. Specify by #number or title keyword.",
       inputSchema: {
         target: z
           .string()
-          .describe("완료할 할일의 고유 번호(#number) 또는 제목 키워드"),
+          .describe("Todo #number or title keyword"),
       },
     },
     async ({ target }) => {
@@ -185,7 +183,7 @@ function createServer(userId: string) {
           content: [
             {
               type: "text" as const,
-              text: `"${target}"에 해당하는 할일을 찾지 못했습니다.`,
+              text: `Todo "${target}" not found.`,
             },
           ],
         };
@@ -200,7 +198,7 @@ function createServer(userId: string) {
         content: [
           {
             type: "text" as const,
-            text: `✓ #${num || ''} ${matched.title} 완료!`,
+            text: `✓ #${num || ''} ${matched.title} done!`,
           },
         ],
       };
@@ -211,9 +209,9 @@ function createServer(userId: string) {
     "delete_todo",
     {
       title: "Delete Todo",
-      description: "할일을 삭제합니다. 할일 고유 번호(#number) 또는 제목 키워드로 지정합니다.",
+      description: "Delete a todo. Specify by #number or title keyword.",
       inputSchema: {
-        target: z.string().describe("삭제할 할일의 고유 번호(#number) 또는 제목 키워드"),
+        target: z.string().describe("Todo #number or title keyword"),
       },
     },
     async ({ target }) => {
@@ -240,7 +238,7 @@ function createServer(userId: string) {
       if (!matched) {
         return {
           content: [
-            { type: "text" as const, text: `"${target}"에 해당하는 할일을 찾지 못했습니다.` },
+            { type: "text" as const, text: `Todo "${target}" not found.` },
           ],
         };
       }
@@ -249,7 +247,7 @@ function createServer(userId: string) {
 
       return {
         content: [
-          { type: "text" as const, text: `🗑 #${num || ''} ${matched.title} 삭제 완료` },
+          { type: "text" as const, text: `🗑 #${num || ''} ${matched.title} deleted.` },
         ],
       };
     }
@@ -259,13 +257,13 @@ function createServer(userId: string) {
     "update_todo",
     {
       title: "Update Todo",
-      description: "할일의 제목, 메모, 우선순위, 기한을 수정합니다.",
+      description: "Update a todo's title, memo, priority, or deadline.",
       inputSchema: {
-        target: z.string().describe("수정할 할일의 고유 번호(#number) 또는 제목 키워드"),
-        title: z.string().optional().describe("변경할 제목"),
-        memo: z.string().optional().describe("변경할 메모"),
-        priority: z.enum(["urgent", "normal", "low"]).optional().describe("변경할 우선순위"),
-        deadline: z.string().optional().describe("변경할 기한 (YYYY-MM-DD)"),
+        target: z.string().describe("Todo #number or title keyword"),
+        title: z.string().optional().describe("New title"),
+        memo: z.string().optional().describe("New memo"),
+        priority: z.enum(["urgent", "normal", "low"]).optional().describe("New priority"),
+        deadline: z.string().optional().describe("New deadline (YYYY-MM-DD)"),
       },
     },
     async ({ target, title, memo, priority, deadline }) => {
@@ -292,7 +290,7 @@ function createServer(userId: string) {
       if (!matched) {
         return {
           content: [
-            { type: "text" as const, text: `"${target}"에 해당하는 할일을 찾지 못했습니다.` },
+            { type: "text" as const, text: `Todo "${target}" not found.` },
           ],
         };
       }
@@ -308,7 +306,7 @@ function createServer(userId: string) {
       const fields = Object.keys(updateData).join(", ");
       return {
         content: [
-          { type: "text" as const, text: `✏️ ${matched.title} 수정 완료 (${fields})` },
+          { type: "text" as const, text: `✏️ ${matched.title} updated (${fields})` },
         ],
       };
     }
@@ -318,7 +316,7 @@ function createServer(userId: string) {
     "list_projects",
     {
       title: "List Projects",
-      description: "등록된 프로젝트 목록을 조회합니다.",
+      description: "List all registered projects.",
       inputSchema: {},
     },
     async () => {
@@ -330,7 +328,7 @@ function createServer(userId: string) {
       if (result.length === 0) {
         return {
           content: [
-            { type: "text" as const, text: "등록된 프로젝트가 없습니다." },
+            { type: "text" as const, text: "No projects registered." },
           ],
         };
       }
@@ -347,7 +345,7 @@ function createServer(userId: string) {
         content: [
           {
             type: "text" as const,
-            text: `프로젝트 ${result.length}개:\n${text}`,
+            text: `${result.length} projects:\n${text}`,
           },
         ],
       };
@@ -358,14 +356,14 @@ function createServer(userId: string) {
     "add_project",
     {
       title: "Add Project",
-      description: "새 프로젝트를 등록합니다.",
+      description: "Register a new project.",
       inputSchema: {
-        slug: z.string().describe("프로젝트 슬러그 (매칭용, 필수)"),
-        name: z.string().optional().describe("프로젝트 표시명 (선택)"),
+        slug: z.string().describe("Project slug (lowercase, hyphens)"),
+        name: z.string().optional().describe("Display name (optional)"),
         directoryPath: z
           .string()
           .optional()
-          .describe("로컬 디렉토리 경로"),
+          .describe("Local directory path"),
       },
     },
     async ({ slug, name, directoryPath }) => {
@@ -380,7 +378,7 @@ function createServer(userId: string) {
           content: [
             {
               type: "text" as const,
-              text: `"${slug}" 프로젝트는 이미 존재합니다.`,
+              text: `Project "${slug}" already exists.`,
             },
           ],
         };
@@ -396,7 +394,7 @@ function createServer(userId: string) {
       const displayName = name || slug;
       return {
         content: [
-          { type: "text" as const, text: `📁 ${displayName} 프로젝트 추가했습니다.` },
+          { type: "text" as const, text: `📁 Project ${displayName} added.` },
         ],
       };
     }
@@ -406,9 +404,9 @@ function createServer(userId: string) {
     "delete_project",
     {
       title: "Delete Project",
-      description: "프로젝트를 삭제합니다. 해당 프로젝트의 할일은 미분류로 이동됩니다.",
+      description: "Delete a project. Todos in the project become uncategorized.",
       inputSchema: {
-        slug: z.string().describe("삭제할 프로젝트 slug"),
+        slug: z.string().describe("Slug of the project to delete"),
       },
     },
     async ({ slug }) => {
@@ -421,7 +419,7 @@ function createServer(userId: string) {
       if (!target) {
         return {
           content: [
-            { type: "text" as const, text: `"${slug}" 프로젝트를 찾지 못했습니다.` },
+            { type: "text" as const, text: `Project "${slug}" not found.` },
           ],
         };
       }
@@ -430,7 +428,7 @@ function createServer(userId: string) {
 
       return {
         content: [
-          { type: "text" as const, text: `🗑 ${target.name || target.slug} 프로젝트 삭제 완료` },
+          { type: "text" as const, text: `🗑 Project ${target.name || target.slug} deleted.` },
         ],
       };
     }

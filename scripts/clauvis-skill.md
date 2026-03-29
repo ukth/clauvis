@@ -1,42 +1,42 @@
 ---
-description: "사용자가 할일/투두/TODO 추가, 조회, 완료, 삭제를 원하거나 프로젝트 관리를 할 때. '이거 기억해줘', '나중에 해야지', '할일 보여줘' 등의 표현 감지 시 자동 실행"
+description: "When the user wants to add, view, complete, or delete todos, or manage projects. Trigger on expressions like 'remember this', 'add to todo', 'show my todos', 'what's left'."
 ---
 
-# Clauvis - 할일 관리 도구
+# Clauvis - Todo Management Tool
 
-## 사용 가능한 MCP 도구
+## Available MCP Tools
 
-- `list_todos(project?)` — 할일 목록 조회. project slug로 필터링 가능
-- `add_todo(title, project?, priority?, deadline?, memo?)` — 할일 추가
-- `complete_todo(target)` — 할일 완료. 번호 또는 제목 키워드
-- `update_todo(target, title?, memo?, priority?, deadline?)` — 할일 수정
-- `delete_todo(target)` — 할일 삭제. 번호 또는 제목 키워드
-- `list_projects()` — 프로젝트 목록 조회
-- `add_project(slug, name?, directoryPath?)` — 프로젝트 등록
-- `delete_project(slug)` — 프로젝트 삭제
+- `list_todos(project?)` — List todos. Filter by project slug.
+- `add_todo(title, project?, priority?, deadline?, memo?)` — Add a todo.
+- `complete_todo(target)` — Complete a todo by #number or title keyword.
+- `update_todo(target, title?, memo?, priority?, deadline?)` — Update a todo.
+- `delete_todo(target)` — Delete a todo by #number or title keyword.
+- `list_projects()` — List all projects.
+- `add_project(slug, name?, directoryPath?)` — Register a project.
+- `delete_project(slug)` — Delete a project.
 
-## 언제 어떤 도구를 쓸지
+## When to Use Each Tool
 
-### 할일 추가 (`add_todo`)
-- "이거 나중에 해야지", "TODO에 넣어줘", "기억해줘", "할일 추가"
-- 작업 중 발견한 버그/개선사항을 기록하고 싶을 때
-- 사용자가 명시적으로 저장을 요청할 때
-- title은 필수, project/priority/deadline/memo는 선택
+### Adding Todos (`add_todo`)
+- "I should do this later", "add to TODO", "remember this", "add todo"
+- When bugs/improvements are discovered during work
+- When the user explicitly requests to save something
+- title is required, project/priority/deadline/memo are optional
 
-### 할일 조회 (`list_todos`)
-- "할일 뭐 있어?", "뭐 남았지?", "할일 보여줘"
-- 세션 시작 시 hook이 자동으로 주입하므로 직접 호출할 필요 없음 (추가 조회 시에만)
+### Listing Todos (`list_todos`)
+- "what's left?", "show todos", "what do I need to do?"
+- The session hook auto-injects todos at startup, so only call manually for additional queries
 
-### 할일 완료 (`complete_todo`)
-- 작업이 완료된 후 사용자에게 "Clauvis에서 완료 처리할까요?" 물어보기
-- 사용자가 "그거 끝났어", "완료해줘" 등으로 요청할 때
-- **중요**: 사용자 확인 없이 임의로 완료 처리하지 말 것
+### Completing Todos (`complete_todo`)
+- After work is done, ask the user "Mark as done in Clauvis?"
+- When the user says "that's done", "mark it complete", etc.
+- **Important**: Never mark as done without user confirmation
 
-### 프로젝트 관리 (`list_projects`, `add_project`)
-- "프로젝트 목록", "새 프로젝트 등록해줘"
-- add_project 시 현재 디렉토리를 directoryPath로 설정하면 자동 필터링 가능
+### Project Management (`list_projects`, `add_project`)
+- "list projects", "register a new project"
+- Setting directoryPath with add_project enables auto-filtering by current directory
 
-## 주의사항
-- 할일 완료 처리는 반드시 사용자에게 먼저 물어볼 것
-- 할일 추가 시 사용자가 명시적으로 원할 때만 (대화 내용을 임의로 할일에 넣지 말 것)
-- 세션 시작 시 할일 목록은 hook이 자동 주입함 → 요약해서 알려주면 됨
+## Guidelines
+- Always ask the user before marking a todo as done
+- Only add todos when the user explicitly requests it (don't auto-add from conversation)
+- Todos are auto-injected at session start via hook — just summarize them for the user

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Clauvis Setup Script
-# Usage: bash <(curl -sL https://raw.githubusercontent.com/ukth/clauvis/main/scripts/setup.sh)
+# Usage: curl -sL https://raw.githubusercontent.com/ukth/clauvis/main/scripts/setup.sh | bash
 
 set -e
 
@@ -13,28 +13,28 @@ HOOK_FILE="$HOOK_DIR/hook.sh"
 
 echo "🔧 Clauvis Setup"
 echo ""
-echo "API Key가 없다면 텔레그램 봇에서 발급받으세요:"
-echo "  👉 https://t.me/clauvis_ai_bot 에서 /start"
+echo "If you don't have an API Key, get one from the Telegram bot:"
+echo "  👉 https://t.me/clauvis_ai_bot → send /start"
 echo ""
 
-# 1. API Key 입력
-read -p "API Key를 입력하세요 (clv_...): " API_KEY < /dev/tty
+# 1. API Key input
+read -p "Enter your API Key (clv_...): " API_KEY < /dev/tty
 
 if [[ ! "$API_KEY" =~ ^clv_ ]]; then
-  echo "❌ 유효하지 않은 API Key입니다. clv_로 시작해야 합니다."
+  echo "❌ Invalid API Key. Must start with clv_."
   exit 1
 fi
 
-# API Key 검증
+# Verify API Key
 VERIFY=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects")
 if [ "$VERIFY" != "200" ]; then
-  echo "❌ API Key 인증 실패. 텔레그램 봇에서 /start 로 발급받으세요."
+  echo "❌ API Key verification failed. Get one from the Telegram bot with /start."
   exit 1
 fi
 
-echo "✓ API Key 확인됨"
+echo "✓ API Key verified"
 
-# 2. Hook 스크립트 설치
+# 2. Install hook script
 mkdir -p "$HOOK_DIR"
 
 cat > "$HOOK_FILE" << 'HOOKSCRIPT'
@@ -68,13 +68,13 @@ print(u.replace('/api/mcp',''))
 
 [ -z "$URL" ] && exit 0
 
-# 1. .clauvis/config.md에서 프로젝트명 확인
+# 1. Check project name from .clauvis/config.md
 PROJECT=""
 if [ -f ".clauvis/config.md" ]; then
   PROJECT=$(grep -m1 "clauvis-project:" .clauvis/config.md 2>/dev/null | sed 's/.*clauvis-project:[[:space:]]*//')
 fi
 
-# 2. 없으면 현재 디렉토리로 프로젝트 자동 매칭
+# 2. If not found, auto-match by current directory
 if [ -z "$PROJECT" ]; then
   CWD=$(pwd)
   MATCH=$(curl -s -H "Authorization: Bearer $API_KEY" "$URL/api/projects" 2>/dev/null | python3 -c "
@@ -104,37 +104,37 @@ COUNT=$(echo "$TODOS" | python3 -c "import sys,json; print(len(json.load(sys.std
 [ -z "$COUNT" ] || [ "$COUNT" = "0" ] && exit 0
 
 echo "<clauvis-todos>"
-[ -n "$PROJECT" ] && echo "프로젝트 '$PROJECT'의 할일 ${COUNT}개:" || echo "전체 할일 ${COUNT}개:"
+[ -n "$PROJECT" ] && echo "${COUNT} todos for project '$PROJECT':" || echo "${COUNT} todos:"
 echo "$TODOS" | python3 -c "
 import sys, json
 todos = json.load(sys.stdin)
 grouped = {}
 for t in todos:
-    p = t.get('projectName') or t.get('projectSlug') or '미분류'
+    p = t.get('projectName') or t.get('projectSlug') or 'Uncategorized'
     grouped.setdefault(p, []).append(t)
 i = 1
 for proj, items in grouped.items():
     print(f'\n[{proj}]')
     for t in items:
-        d = f\" (기한: {t['deadline'][:10]})\" if t.get('deadline') else ''
+        d = f\" (deadline: {t['deadline'][:10]})\" if t.get('deadline') else ''
         print(f'  {i}. {t[\"title\"]}{d}')
         i += 1
 " 2>/dev/null
 echo ""
-echo "위 할일 목록을 간단히 요약해서 사용자에게 알려주세요."
+echo "Briefly summarize the todo list above for the user."
 echo "</clauvis-todos>"
 HOOKSCRIPT
 
 chmod +x "$HOOK_FILE"
-echo "✓ Hook 스크립트 설치 완료"
+echo "✓ Hook script installed"
 
-# 3. MCP 서버 추가 (claude mcp add CLI 사용)
+# 3. Add MCP server
 claude mcp remove clauvis 2>/dev/null || true
 claude mcp add --transport http --scope user clauvis "$CLAUVIS_URL/api/mcp" \
   --header "Authorization: Bearer $API_KEY" 2>/dev/null
-echo "✓ MCP 서버 설정 완료"
+echo "✓ MCP server configured"
 
-# 4. Hook 추가 (settings.json)
+# 4. Add hook to settings.json
 mkdir -p "$CLAUDE_DIR"
 
 python3 -c "
@@ -164,61 +164,61 @@ settings['hooks']['UserPromptSubmit'] = existing
 
 with open(path, 'w') as f:
     json.dump(settings, f, indent=2, ensure_ascii=False)
-print('✓ Hook 설정 완료')
+print('✓ Hook settings configured')
 "
 
-# 4. Clauvis 스킬 설치
+# 5. Install Clauvis skill
 SKILL_DIR="$CLAUDE_DIR/skills/clauvis"
 mkdir -p "$SKILL_DIR"
 curl -sL "https://raw.githubusercontent.com/ukth/clauvis/main/scripts/clauvis-skill.md" > "$SKILL_DIR/SKILL.md"
-echo "✓ Clauvis 스킬 설치 완료"
+echo "✓ Clauvis skill installed"
 
-# 5. CLAUDE.md에 최소 안내 추가
+# 6. Add minimal instructions to CLAUDE.md
 CLAUVIS_LINE="## Clauvis
-- 세션 시작 시 할일이 자동 주입됩니다. 요약해서 알려주세요."
+- Todos are auto-injected at session start. Summarize them for the user."
 
 if [ -f "$CLAUDE_MD" ]; then
   if ! grep -q "Clauvis" "$CLAUDE_MD"; then
     echo "" >> "$CLAUDE_MD"
     echo "$CLAUVIS_LINE" >> "$CLAUDE_MD"
-    echo "✓ CLAUDE.md 업데이트 완료"
+    echo "✓ CLAUDE.md updated"
   else
-    echo "✓ CLAUDE.md에 이미 Clauvis 설정이 있습니다."
+    echo "✓ CLAUDE.md already has Clauvis config"
   fi
 else
   echo "$CLAUVIS_LINE" > "$CLAUDE_MD"
-  echo "✓ CLAUDE.md 생성 완료"
+  echo "✓ CLAUDE.md created"
 fi
 
 echo ""
-echo "✅ 기본 설정 완료!"
+echo "✅ Basic setup complete!"
 
-# 5. 프로젝트 등록 (반복)
+# 7. Register projects
 echo ""
-echo "📁 프로젝트를 등록하면 해당 디렉토리에서 Claude Code 실행 시 할일이 자동 필터링됩니다."
-echo "   (.git이 있는 폴더를 프로젝트로 등록합니다)"
+echo "📁 Register projects to auto-filter todos by directory in Claude Code."
+echo "   (Registers folders containing .git as projects)"
 echo ""
 
 while true; do
-  read -p "프로젝트 경로를 입력하세요 (폴더 드래그 가능, 완료하려면 엔터): " PROJECT_INPUT < /dev/tty
+  read -p "Enter project path (drag folder, or press Enter to finish): " PROJECT_INPUT < /dev/tty
 
-  # 빈 입력이면 종료
+  # Empty input = done
   [ -z "$PROJECT_INPUT" ] && break
 
   PROJECT_DIR=$(realpath "$(eval echo "$PROJECT_INPUT")" 2>/dev/null || eval echo "$PROJECT_INPUT")
 
   if [ ! -d "$PROJECT_DIR" ]; then
-    echo "  ❌ 디렉토리를 찾을 수 없습니다: $PROJECT_DIR"
+    echo "  ❌ Directory not found: $PROJECT_DIR"
     continue
   fi
 
-  # 프로젝트 등록 함수 (slug 중복 시 상위 폴더 붙여 재시도)
+  # Register project (retry with parent folder prefix on slug conflict)
   register_project() {
     local dir="$1"
     local slug=$(basename "$dir")
     local parent=$(basename "$(dirname "$dir")")
 
-    # 이미 같은 경로로 등록되어 있으면 스킵
+    # Skip if already registered with same path
     local exists=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
 import sys, json
 for p in json.load(sys.stdin):
@@ -228,32 +228,32 @@ for p in json.load(sys.stdin):
 " 2>/dev/null)
 
     if [ "$exists" = "yes" ]; then
-      echo "  · $slug (이미 등록됨)"
+      echo "  · $slug (already registered)"
       return
     fi
 
-    # 등록 시도
+    # Attempt registration
     local status=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CLAUVIS_URL/api/projects" \
       -H "Authorization: Bearer $API_KEY" \
       -H "Content-Type: application/json" \
-      -d "{\"slug\":\"$slug\",\"aliases\":[],\"directoryPath\":\"$dir\"}")
+      -d "{\"slug\":\"$slug\",\"directoryPath\":\"$dir\"}")
 
     if [ "$status" = "409" ]; then
-      # slug 중복 → 상위 폴더 붙여서 재시도
+      # Slug conflict — retry with parent folder prefix
       slug="${parent}-${slug}"
       curl -s -X POST "$CLAUVIS_URL/api/projects" \
         -H "Authorization: Bearer $API_KEY" \
         -H "Content-Type: application/json" \
-        -d "{\"slug\":\"$slug\",\"aliases\":[],\"directoryPath\":\"$dir\"}" > /dev/null 2>&1
+        -d "{\"slug\":\"$slug\",\"directoryPath\":\"$dir\"}" > /dev/null 2>&1
     fi
 
-    echo "  ✓ $slug 등록 완료"
+    echo "  ✓ $slug registered"
   }
 
-  # .git이 있는 프로젝트 찾기
+  # Find .git projects
   GIT_COUNT=$(find "$PROJECT_DIR" -maxdepth 2 -name ".git" -type d 2>/dev/null | wc -l | tr -d ' ')
   if [ "$GIT_COUNT" = "0" ]; then
-    echo "  ⚠ .git 프로젝트를 찾지 못했습니다: $PROJECT_DIR"
+    echo "  ⚠ No .git projects found in: $PROJECT_DIR"
   else
     find "$PROJECT_DIR" -maxdepth 2 -name ".git" -type d 2>/dev/null | while read gitdir; do
       register_project "$(dirname "$gitdir")"
@@ -264,16 +264,16 @@ for p in json.load(sys.stdin):
 done
 
 echo ""
-echo "✅ Clauvis 설정 완료!"
+echo "✅ Clauvis setup complete!"
 echo ""
-echo "설치된 항목:"
-echo "  ✓ MCP 서버 (Claude Code에서 할일 도구 사용 가능)"
-echo "  ✓ 세션 시작 Hook (첫 메시지 시 할일 자동 표시)"
-echo "  ✓ CLAUDE.md 지시 (할일 요약 + 완료 처리 안내)"
+echo "Installed:"
+echo "  ✓ MCP server (todo tools available in Claude Code)"
+echo "  ✓ Session hook (todos shown on first message)"
+echo "  ✓ CLAUDE.md instructions (todo summary + completion prompts)"
 echo ""
-echo "사용법:"
-echo "  1. Claude Code를 재시작하세요"
-echo "  2. 아무 메시지나 보내면 할일이 자동으로 표시됩니다"
-echo "  3. 각 프로젝트에서 실행하면 해당 프로젝트 할일만 표시됩니다"
+echo "Usage:"
+echo "  1. Restart Claude Code"
+echo "  2. Send any message — your todos will appear automatically"
+echo "  3. Run in a project directory to see only that project's todos"
 echo ""
-echo "텔레그램 봇: https://t.me/clauvis_ai_bot"
+echo "Telegram bot: https://t.me/clauvis_ai_bot"

@@ -70,16 +70,16 @@ fi
 # Format output
 echo "<clauvis-todos>"
 if [ -n "$PROJECT" ]; then
-  echo "프로젝트 '$PROJECT'의 할일 ${COUNT}개:"
+  echo "${COUNT} todos for project '$PROJECT':"
 else
-  echo "전체 할일 ${COUNT}개:"
+  echo "${COUNT} todos:"
 fi
 echo "$TODOS" | python3 -c "
 import sys, json
 todos = json.load(sys.stdin)
 grouped = {}
 for t in todos:
-    p = t.get('projectName') or '미분류'
+    p = t.get('projectName') or 'Uncategorized'
     if p not in grouped:
         grouped[p] = []
     grouped[p].append(t)
@@ -89,10 +89,10 @@ for proj, items in grouped.items():
     for t in items:
         deadline = ''
         if t.get('deadline'):
-            deadline = f\" (기한: {t['deadline'][:10]})\"
+            deadline = f\" (deadline: {t['deadline'][:10]})\"
         print(f\"  {i}. {t['title']}{deadline}\")
         i += 1
 " 2>/dev/null
 echo ""
-echo "위 할일 목록을 간단히 요약해서 사용자에게 알려주세요."
+echo "Briefly summarize the todo list above for the user."
 echo "</clauvis-todos>"

@@ -145,6 +145,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  console.log(`[TELEGRAM] message_id=${message.message_id} chat=${message.chat.id} text="${(message.text || "").substring(0, 50)}"`);
+
   const chatId = message.chat.id;
   const text = message.text.trim();
 

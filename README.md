@@ -51,33 +51,69 @@ Claude Code   ←→  MCP Server            ←→       ↑
 
 - **Framework**: Next.js (App Router)
 - **Database**: PostgreSQL (Neon) + Drizzle ORM
-- **AI**: Claude Sonnet 4.6 (Telegram agent) / Claude Haiku 4.5 (API parsing)
+- **AI**: Claude (BYOK — user selects haiku/sonnet/opus)
 - **Messaging**: Telegram Bot API
 - **Deployment**: Vercel
 - **Integration**: MCP (Model Context Protocol) for Claude Code
 
 ## Self-hosting
 
-1. Clone the repo
-2. Create a Neon database
-3. Set up environment variables:
+### 1. Clone and install
+
+```bash
+git clone https://github.com/ukth/clauvis.git
+cd clauvis/app
+npm install
+```
+
+### 2. Create a database
+
+Set up a PostgreSQL database (e.g. [Neon](https://neon.tech) free tier).
+
+### 3. Create a Telegram bot
+
+Message [@BotFather](https://t.me/BotFather) on Telegram and create a new bot. Save the bot token.
+
+### 4. Set up environment variables
 
 ```
 DATABASE_URL=postgresql://...
 DATABASE_URL_UNPOOLED=postgresql://...
-ANTHROPIC_API_KEY=sk-ant-...
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_WEBHOOK_SECRET=...
-ADMIN_SECRET_KEY=...
+TELEGRAM_BOT_TOKEN=<your bot token>
+TELEGRAM_WEBHOOK_SECRET=<random secret string>
+ENCRYPTION_KEY=<32-byte hex key for API key encryption>
+ADMIN_SECRET_KEY=<random secret for user creation API>
 ```
 
-4. Push the schema: `npx drizzle-kit push`
-5. Deploy to Vercel: `vercel --prod`
-6. Register the Telegram webhook:
+Generate `ENCRYPTION_KEY` with:
+```bash
+openssl rand -hex 32
+```
+
+> Note: `ANTHROPIC_API_KEY` is not needed. All LLM calls use the user's own key (BYOK).
+
+### 5. Push schema and deploy
+
+```bash
+npx drizzle-kit push
+vercel --prod
+```
+
+### 6. Register Telegram webhook
 
 ```bash
 curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<YOUR_URL>/api/telegram&secret_token=<SECRET>"
 ```
+
+### 7. Set up Claude Code integration
+
+Users can run the setup script with a custom URL:
+
+```bash
+CLAUVIS_URL=https://your-domain.com curl -sL https://raw.githubusercontent.com/ukth/clauvis/main/scripts/setup.sh | bash
+```
+
+Or fork the repo and update the default URL in `scripts/setup.sh`.
 
 ## License
 

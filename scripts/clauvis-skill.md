@@ -7,10 +7,13 @@ description: "사용자가 할일/투두/TODO 추가, 조회, 완료, 삭제를 
 ## 사용 가능한 MCP 도구
 
 - `list_todos(project?)` — 할일 목록 조회. project slug로 필터링 가능
-- `add_todo(title, project?, priority?, deadline?, memo?)` — 할일 추가. 구조화된 필드로 입력
+- `add_todo(title, project?, priority?, deadline?, memo?)` — 할일 추가
 - `complete_todo(target)` — 할일 완료. 번호 또는 제목 키워드
+- `update_todo(target, title?, memo?, priority?, deadline?)` — 할일 수정
+- `delete_todo(target)` — 할일 삭제. 번호 또는 제목 키워드
 - `list_projects()` — 프로젝트 목록 조회
 - `add_project(slug, name?, directoryPath?)` — 프로젝트 등록
+- `delete_project(slug)` — 프로젝트 삭제
 
 ## 언제 어떤 도구를 쓸지
 

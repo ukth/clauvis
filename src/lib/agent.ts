@@ -629,6 +629,8 @@ ${projectContext || "None"}`;
     { role: "user", content: userMessage },
   ];
 
+  console.log(`[AGENT] messages=${JSON.stringify(messages)}`);
+
   const MAX_ITERATIONS = 5;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {

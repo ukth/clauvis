@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
   if (isCommand(text)) {
     try {
       const response = await handleCommand(text, user.id);
-      await sendMessage(chatId, response, false);
+      await sendMessage(chatId, response, "HTML");
     } catch (error) {
       console.error("Command error:", error);
       await sendMessage(chatId, "Something went wrong. Please try again.", false);

@@ -5,6 +5,10 @@ import { getNextTodoNumber } from "./db/utils";
 
 const VALID_MODELS = ["haiku", "sonnet", "opus"] as const;
 
+function h(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function isCommand(text: string): boolean {
   return /^\/[a-zA-Z]/.test(text) && !text.startsWith("/start");
 }
@@ -147,9 +151,9 @@ async function cmdAdd(args: string[], userId: string, rawText: string): Promise<
     source: "telegram",
   });
 
-  const label = projectDisplay ? ` [${projectDisplay}]` : "";
-  const memoStr = memo ? `\n📝 ${memo}` : "";
-  return `✅ #${number} ${title}${label}${memoStr}`;
+  const label = projectDisplay ? ` <b>[${h(projectDisplay)}]</b>` : "";
+  const memoStr = memo ? `\n📝 ${h(memo)}` : "";
+  return `✅ <b>#${number}</b> ${h(title)}${label}${memoStr}`;
 }
 
 async function cmdList(args: string[], userId: string): Promise<string> {
@@ -193,16 +197,16 @@ async function cmdList(args: string[], userId: string): Promise<string> {
     grouped.get(key)!.items.push(todo);
   }
 
-  let msg = `📋 ${result.length} todos\n`;
+  let msg = `📋 <b>${result.length} todos</b>\n`;
 
   for (const [, group] of grouped) {
-    msg += `\n[${group.display}]\n`;
+    msg += `\n<b>[${h(group.display)}]</b>\n`;
     for (const item of group.items) {
-      const priority = item.priority !== "normal" ? ` [${item.priority}]` : "";
+      const priority = item.priority !== "normal" ? ` <i>[${item.priority}]</i>` : "";
       const deadline = item.deadline
-        ? ` (${item.deadline.toISOString().split("T")[0]})`
+        ? ` <i>(${item.deadline.toISOString().split("T")[0]})</i>`
         : "";
-      msg += `#${item.number}. ${item.title}${priority}${deadline}\n`;
+      msg += `<b>#${item.number}</b>. ${h(item.title)}${priority}${deadline}\n`;
     }
   }
 
@@ -232,7 +236,7 @@ async function cmdDone(args: string[], userId: string): Promise<string> {
     .set({ status: "done", completedAt: new Date() })
     .where(eq(todos.id, todo.id));
 
-  return `✅ Done: #${num} ${todo.title}`;
+  return `✅ Done: <b>#${num}</b> ${h(todo.title)}`;
 }
 
 async function cmdDel(args: string[], userId: string): Promise<string> {
@@ -252,7 +256,7 @@ async function cmdDel(args: string[], userId: string): Promise<string> {
 
   await db.delete(todos).where(eq(todos.id, todo.id));
 
-  return `🗑 Deleted: #${num} ${todo.title}`;
+  return `🗑 Deleted: <b>#${num}</b> ${h(todo.title)}`;
 }
 
 async function cmdView(args: string[], userId: string): Promise<string> {
@@ -282,12 +286,12 @@ async function cmdView(args: string[], userId: string): Promise<string> {
     : "";
   const created = todo.createdAt.toISOString().split("T")[0];
 
-  return `#${num} ${todo.title}
+  return `<b>#${num} ${h(todo.title)}</b>
 
-Project: ${project}
-Status: ${status}${priority}${deadline}
-Created: ${created}${completed}
-Source: ${todo.source}${memo}`;
+<b>Project:</b> ${h(project)}
+<b>Status:</b> ${status}${priority}${deadline}
+<b>Created:</b> ${created}${completed}
+<b>Source:</b> ${todo.source}${memo}`;
 }
 
 async function cmdNewProject(
@@ -326,9 +330,9 @@ async function cmdProjects(userId: string): Promise<string> {
     return "No projects yet. Create one with /newproject.";
   }
 
-  let msg = `📁 ${allProjects.length} projects\n\n`;
+  let msg = `📁 <b>${allProjects.length} projects</b>\n\n`;
   for (const p of allProjects) {
-    const display = p.name ? `${p.name} [${p.slug}]` : p.slug;
+    const display = p.name ? `<b>${h(p.name)}</b> <code>${h(p.slug)}</code>` : `<code>${h(p.slug)}</code>`;
     msg += `• ${display}\n`;
   }
 

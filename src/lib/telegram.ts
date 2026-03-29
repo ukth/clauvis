@@ -4,9 +4,9 @@ function escapeMarkdownV2(text: string): string {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
 }
 
-export async function sendMessage(chatId: number, text: string, markdown = true) {
+export async function sendMessage(chatId: number, text: string, parseMode: "MarkdownV2" | "HTML" | false = "MarkdownV2") {
   const body: Record<string, unknown> = { chat_id: chatId, text };
-  if (markdown) body.parse_mode = "MarkdownV2";
+  if (parseMode) body.parse_mode = parseMode;
 
   const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",

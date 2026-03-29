@@ -6,11 +6,11 @@ description: "사용자가 할일/투두/TODO 추가, 조회, 완료, 삭제를 
 
 ## 사용 가능한 MCP 도구
 
-- `list_todos(project?)` — 할일 목록 조회. project로 필터링 가능
-- `add_todo(content)` — 할일 추가. 자연어 입력하면 LLM이 프로젝트 분류/기한 추출
+- `list_todos(project?)` — 할일 목록 조회. project slug로 필터링 가능
+- `add_todo(title, project?, priority?, deadline?, memo?)` — 할일 추가. 구조화된 필드로 입력
 - `complete_todo(target)` — 할일 완료. 번호 또는 제목 키워드
 - `list_projects()` — 프로젝트 목록 조회
-- `add_project(slug, name?, aliases?, directoryPath?)` — 프로젝트 등록
+- `add_project(slug, name?, directoryPath?)` — 프로젝트 등록
 
 ## 언제 어떤 도구를 쓸지
 
@@ -18,6 +18,7 @@ description: "사용자가 할일/투두/TODO 추가, 조회, 완료, 삭제를 
 - "이거 나중에 해야지", "TODO에 넣어줘", "기억해줘", "할일 추가"
 - 작업 중 발견한 버그/개선사항을 기록하고 싶을 때
 - 사용자가 명시적으로 저장을 요청할 때
+- title은 필수, project/priority/deadline/memo는 선택
 
 ### 할일 조회 (`list_todos`)
 - "할일 뭐 있어?", "뭐 남았지?", "할일 보여줘"

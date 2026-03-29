@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const userId = getUserId(request);
   const body = await request.json();
-  const { slug, name = null, aliases = [], directoryPath = null } = body;
+  const { slug, name = null, directoryPath = null } = body;
 
   const existing = await db
     .select()
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
   const [project] = await db
     .insert(projects)
-    .values({ userId, slug, name, aliases, directoryPath })
+    .values({ userId, slug, name, directoryPath })
     .returning();
 
   return NextResponse.json(project);
@@ -39,12 +39,11 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const userId = getUserId(request);
   const body = await request.json();
-  const { id, slug, name, aliases, directoryPath } = body;
+  const { id, slug, name, directoryPath } = body;
 
   const updateData: Record<string, unknown> = {};
   if (slug !== undefined) updateData.slug = slug;
   if (name !== undefined) updateData.name = name;
-  if (aliases !== undefined) updateData.aliases = aliases;
   if (directoryPath !== undefined) updateData.directoryPath = directoryPath;
 
   const [updated] = await db

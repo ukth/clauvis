@@ -226,9 +226,7 @@ function createServer(userId: string) {
         .map((p) => {
           const displayName = p.name || p.slug;
           const slugLabel = p.name ? ` [${p.slug}]` : "";
-          const aliases =
-            p.aliases.length > 0 ? ` (${p.aliases.join(", ")})` : "";
-          return `• ${displayName}${slugLabel}${aliases}`;
+          return `• ${displayName}${slugLabel}`;
         })
         .join("\n");
 
@@ -251,17 +249,13 @@ function createServer(userId: string) {
       inputSchema: {
         slug: z.string().describe("프로젝트 슬러그 (매칭용, 필수)"),
         name: z.string().optional().describe("프로젝트 표시명 (선택)"),
-        aliases: z
-          .array(z.string())
-          .optional()
-          .describe("프로젝트 줄임말/별칭"),
         directoryPath: z
           .string()
           .optional()
           .describe("로컬 디렉토리 경로"),
       },
     },
-    async ({ slug, name, aliases = [], directoryPath }) => {
+    async ({ slug, name, directoryPath }) => {
       const existing = await db
         .select()
         .from(projects)
@@ -283,7 +277,6 @@ function createServer(userId: string) {
         userId,
         slug,
         name: name ?? null,
-        aliases,
         directoryPath: directoryPath ?? null,
       });
 

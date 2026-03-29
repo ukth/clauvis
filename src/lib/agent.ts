@@ -154,11 +154,6 @@ const toolDefinitions: Anthropic.Tool[] = [
           description: "프로젝트 slug (영문 소문자, 하이픈)",
         },
         name: { type: "string", description: "프로젝트 표시 이름" },
-        aliases: {
-          type: "array",
-          items: { type: "string" },
-          description: "프로젝트 줄임말/별칭 목록",
-        },
       },
       required: ["slug"],
     },
@@ -412,15 +407,14 @@ async function execListProjects(userId: string): Promise<string> {
 
   let msg = `프로젝트 ${allProjects.length}개:\n`;
   for (const p of allProjects) {
-    const aliasStr = p.aliases.length > 0 ? ` (${p.aliases.join(", ")})` : "";
-    msg += `- ${p.name || p.slug}${aliasStr}\n`;
+    msg += `- ${p.name || p.slug}\n`;
   }
   return msg;
 }
 
 async function execAddProject(
   userId: string,
-  input: { slug: string; name?: string; aliases?: string[] }
+  input: { slug: string; name?: string }
 ): Promise<string> {
   const [existing] = await db
     .select()
@@ -437,12 +431,10 @@ async function execAddProject(
     userId,
     slug: input.slug,
     name: input.name || null,
-    aliases: input.aliases || [],
   });
 
   const displayName = input.name || input.slug;
-  const aliasStr = input.aliases?.length ? ` (alias: ${input.aliases.join(", ")})` : "";
-  return `프로젝트 추가 완료: ${displayName}${aliasStr}`;
+  return `프로젝트 추가 완료: ${displayName}`;
 }
 
 async function execDeleteProject(
@@ -495,7 +487,7 @@ async function executeTool(
       return execListProjects(userId);
     case "add_project":
       return execAddProject(userId, toolInput as {
-        slug: string; name?: string; aliases?: string[];
+        slug: string; name?: string;
       });
     case "delete_project":
       return execDeleteProject(userId, toolInput as { slug: string });
@@ -553,8 +545,7 @@ export async function runAgent(
   const projectContext = projectList
     .map((p) => {
       const displayName = p.name ? ` (${p.name})` : "";
-      const aliases = p.aliases.length > 0 ? `, aliases: ${p.aliases.join(", ")}` : "";
-      return `- slug: ${p.slug}${displayName}${aliases}`;
+      return `- slug: ${p.slug}${displayName}`;
     })
     .join("\n");
 

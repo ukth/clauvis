@@ -64,9 +64,7 @@ async function findProject(userId: string, slugOrAlias: string) {
 
   return (
     allProjects.find(
-      (p) =>
-        p.aliases.some((a) => a.toLowerCase() === slugOrAlias) ||
-        (p.name && p.name.toLowerCase() === slugOrAlias)
+      (p) => p.name && p.name.toLowerCase() === slugOrAlias
     ) || null
   );
 }
@@ -345,9 +343,7 @@ async function cmdProjects(userId: string): Promise<string> {
   let msg = `📁 프로젝트 ${allProjects.length}개\n\n`;
   for (const p of allProjects) {
     const display = p.name ? `${p.name} (${p.slug})` : p.slug;
-    const aliases =
-      p.aliases.length > 0 ? ` - 별칭: ${p.aliases.join(", ")}` : "";
-    msg += `• ${display}${aliases}\n`;
+    msg += `• ${display}\n`;
   }
 
   return msg;

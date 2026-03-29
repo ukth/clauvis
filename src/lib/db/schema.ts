@@ -22,7 +22,6 @@ export const projects = pgTable("projects", {
     .notNull(),
   slug: text("slug").notNull(),
   name: text("name"),
-  aliases: text("aliases").array().notNull().default([]),
   directoryPath: text("directory_path"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [

@@ -202,6 +202,62 @@ function createServer(userId: string) {
   );
 
   server.registerTool(
+    "update_todo",
+    {
+      title: "Update Todo",
+      description: "할일의 제목, 메모, 우선순위, 기한을 수정합니다.",
+      inputSchema: {
+        target: z.string().describe("수정할 할일 번호(1부터) 또는 제목 키워드"),
+        title: z.string().optional().describe("변경할 제목"),
+        memo: z.string().optional().describe("변경할 메모"),
+        priority: z.enum(["urgent", "normal", "low"]).optional().describe("변경할 우선순위"),
+        deadline: z.string().optional().describe("변경할 기한 (YYYY-MM-DD)"),
+      },
+    },
+    async ({ target, title, memo, priority, deadline }) => {
+      const pendingTodos = await db
+        .select({ id: todos.id, title: todos.title })
+        .from(todos)
+        .where(and(eq(todos.userId, userId), eq(todos.status, "pending")))
+        .orderBy(desc(todos.createdAt));
+
+      const num = parseInt(target);
+      let matched;
+
+      if (!isNaN(num) && num >= 1 && num <= pendingTodos.length) {
+        matched = pendingTodos[num - 1];
+      } else {
+        matched = pendingTodos.find((t) =>
+          t.title.toLowerCase().includes(target.toLowerCase())
+        );
+      }
+
+      if (!matched) {
+        return {
+          content: [
+            { type: "text" as const, text: `"${target}"에 해당하는 할일을 찾지 못했습니다.` },
+          ],
+        };
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (title) updateData.title = title;
+      if (memo !== undefined) updateData.memo = memo;
+      if (priority) updateData.priority = priority;
+      if (deadline) updateData.deadline = new Date(deadline);
+
+      await db.update(todos).set(updateData).where(eq(todos.id, matched.id));
+
+      const fields = Object.keys(updateData).join(", ");
+      return {
+        content: [
+          { type: "text" as const, text: `✏️ ${matched.title} 수정 완료 (${fields})` },
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
     "list_projects",
     {
       title: "List Projects",

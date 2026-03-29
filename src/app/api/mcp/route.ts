@@ -4,7 +4,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { todos, projects, users } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { parseNaturalLanguage } from "@/lib/llm";
 
 function createServer(userId: string) {
   const server = new McpServer(
@@ -90,28 +89,33 @@ function createServer(userId: string) {
     "add_todo",
     {
       title: "Add Todo",
-      description: "새 할일을 추가합니다. 자연어로 입력하면 LLM이 해석합니다.",
+      description: "새 할일을 추가합니다.",
       inputSchema: {
-        content: z.string().describe("할일 내용 (자연어)"),
+        title: z.string().describe("할일 제목"),
+        project: z.string().optional().describe("프로젝트 slug"),
+        priority: z.enum(["urgent", "normal", "low"]).optional().describe("우선순위 (기본: normal)"),
+        deadline: z.string().optional().describe("마감일 (YYYY-MM-DD)"),
+        memo: z.string().optional().describe("메모"),
       },
     },
-    async ({ content }) => {
-      const parsed = await parseNaturalLanguage(content, userId);
-
+    async ({ title, project, priority, deadline, memo }) => {
       let projectId: string | null = null;
-      if (parsed.projectSlug) {
+      let projectLabel = "미분류";
+
+      if (project) {
         const proj = await db
           .select()
           .from(projects)
           .where(
             and(
-              eq(projects.slug, parsed.projectSlug),
+              eq(projects.slug, project),
               eq(projects.userId, userId)
             )
           )
           .limit(1);
         if (proj.length > 0) {
           projectId = proj[0].id;
+          projectLabel = proj[0].name || proj[0].slug;
         }
       }
 
@@ -119,17 +123,16 @@ function createServer(userId: string) {
         .insert(todos)
         .values({
           userId,
-          content,
-          title: parsed.title,
-          memo: parsed.memo,
+          content: title,
+          title,
+          memo: memo ?? null,
           projectId,
-          priority: parsed.priority,
-          deadline: parsed.deadline ? new Date(parsed.deadline) : null,
+          priority: priority ?? "normal",
+          deadline: deadline ? new Date(deadline) : null,
           source: "mcp",
         })
         .returning();
 
-      const projectLabel = parsed.projectSlug || "미분류";
       return {
         content: [
           {

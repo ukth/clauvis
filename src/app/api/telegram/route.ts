@@ -4,10 +4,14 @@ import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { sendMessage, sendTyping, esc } from "@/lib/telegram";
 import { runAgent, saveMessage } from "@/lib/agent";
+import { isCommand, handleCommand } from "@/lib/commands";
+import { encrypt, decrypt } from "@/lib/crypto";
+import { deleteMessage } from "@/lib/telegram";
 import { randomBytes } from "crypto";
 
 interface TelegramUpdate {
   message?: {
+    message_id: number;
     chat: { id: number; first_name?: string; username?: string };
     text?: string;
   };
@@ -107,6 +111,61 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // Handle /setkey — encrypt and store API key, delete message for security
+  if (text.startsWith("/setkey ")) {
+    const apiKey = text.replace("/setkey ", "").trim();
+    const deleted = await deleteMessage(chatId, message.message_id);
+
+    if (!apiKey.startsWith("sk-ant-")) {
+      await sendMessage(chatId, "유효한 Anthropic API Key를 입력해주세요.\n예: /setkey sk-ant-...", false);
+      return NextResponse.json({ ok: true });
+    }
+
+    const encrypted = encrypt(apiKey);
+    await db
+      .update(users)
+      .set({ encryptedAnthropicKey: encrypted })
+      .where(eq(users.id, user.id));
+
+    const warning = deleted ? "" : "\n\n⚠️ 메시지 삭제에 실패했어요. 보안을 위해 직접 삭제해주세요.";
+    await sendMessage(chatId, `🔑 API Key가 등록되었어요. 이제 에이전트 모드를 사용할 수 있습니다!${warning}`, false);
+    return NextResponse.json({ ok: true });
+  }
+
+  // Handle /delkey — remove stored API key
+  if (text === "/delkey") {
+    await db
+      .update(users)
+      .set({ encryptedAnthropicKey: null })
+      .where(eq(users.id, user.id));
+
+    await sendMessage(chatId, "🔑 API Key가 삭제되었어요. 명령어 모드로 전환됩니다.", false);
+    return NextResponse.json({ ok: true });
+  }
+
+  // Handle slash commands (no LLM needed)
+  if (isCommand(text)) {
+    try {
+      const response = await handleCommand(text, user.id);
+      await sendMessage(chatId, response, false);
+    } catch (error) {
+      console.error("Command error:", error);
+      await sendMessage(chatId, "명령어 처리 중 오류가 발생했어요.", false);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // Non-command text: check if user has registered API key for agent mode
+  const encryptedKey = user.encryptedAnthropicKey;
+  if (!encryptedKey) {
+    await sendMessage(
+      chatId,
+      "에이전트 모드를 사용하려면 Claude API Key 등록이 필요해요.\n\n/setkey sk-ant-... 로 키를 등록하거나,\n/help 로 명령어 모드 사용법을 확인하세요.",
+      false
+    );
+    return NextResponse.json({ ok: true });
+  }
+
   try {
     // Save user message to chat history
     await saveMessage(user.id, "user", text);
@@ -114,8 +173,9 @@ export async function POST(request: NextRequest) {
     // Show typing indicator
     await sendTyping(chatId);
 
-    // Run the agent
-    const response = await runAgent(text, user.id);
+    // Run the agent with user's API key
+    const apiKey = decrypt(encryptedKey);
+    const response = await runAgent(text, user.id, apiKey, user.model);
 
     // Save bot response to chat history
     await saveMessage(user.id, "assistant", response);

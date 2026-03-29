@@ -4,8 +4,6 @@ import { todos, projects, users, chatMessages } from "./db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { esc } from "./telegram";
 
-const anthropic = new Anthropic();
-
 const SYSTEM_PROMPT = `당신은 할일 관리 비서 Clauvis입니다. 사용자의 메시지에 따라 적절한 도구를 사용하거나, 일상적인 대화에는 직접 응답하세요.
 
 규칙:
@@ -532,10 +530,20 @@ export async function getRecentMessages(
 
 // --- Agent loop ---
 
+const MODEL_MAP: Record<string, string> = {
+  haiku: "claude-haiku-4-5-20251001",
+  sonnet: "claude-sonnet-4-6",
+  opus: "claude-opus-4-6",
+};
+
 export async function runAgent(
   userMessage: string,
-  userId: string
+  userId: string,
+  anthropicApiKey: string,
+  model?: string
 ): Promise<string> {
+  const client = new Anthropic({ apiKey: anthropicApiKey });
+  const modelId = MODEL_MAP[model || "sonnet"] || MODEL_MAP.sonnet;
   // Load project context for system prompt
   const projectList = await db
     .select()
@@ -573,8 +581,8 @@ ${projectContext || "없음"}`;
   const MAX_ITERATIONS = 5;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+    const response = await client.messages.create({
+      model: modelId,
       max_tokens: 1024,
       system: systemPrompt,
       tools: toolDefinitions,

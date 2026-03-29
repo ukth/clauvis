@@ -10,6 +10,8 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   apiKey: text("api_key").notNull().unique(),
   telegramChatId: text("telegram_chat_id").unique(),
+  encryptedAnthropicKey: text("encrypted_anthropic_key"),
+  model: text("model").notNull().default("sonnet"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

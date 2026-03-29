@@ -129,6 +129,7 @@ chmod +x "$HOOK_FILE"
 echo "✓ Hook 스크립트 설치 완료"
 
 # 3. MCP 서버 추가 (claude mcp add CLI 사용)
+claude mcp remove clauvis 2>/dev/null || true
 claude mcp add --transport http --scope user clauvis "$CLAUVIS_URL/api/mcp" \
   --header "Authorization: Bearer $API_KEY" 2>/dev/null
 echo "✓ MCP 서버 설정 완료"

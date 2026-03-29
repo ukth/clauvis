@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { todos, projects } from "@/lib/db/schema";
 import { eq, and, desc, or } from "drizzle-orm";
-import { parseNaturalLanguage } from "@/lib/llm";
 import { getUserId } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
@@ -57,19 +56,23 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const userId = getUserId(request);
   const body = await request.json();
-  const { content, source = "web" } = body;
+  const { title, project, priority, deadline, memo, source = "web" } = body;
 
-  const parsed = await parseNaturalLanguage(content, userId);
+  if (!title) {
+    return NextResponse.json({ error: "title is required" }, { status: 400 });
+  }
 
   let projectId: string | null = null;
-  if (parsed.projectSlug) {
-    const project = await db
+  let projectSlug: string | null = null;
+  if (project) {
+    const proj = await db
       .select()
       .from(projects)
-      .where(and(eq(projects.slug, parsed.projectSlug), eq(projects.userId, userId)))
+      .where(and(eq(projects.slug, project), eq(projects.userId, userId)))
       .limit(1);
-    if (project.length > 0) {
-      projectId = project[0].id;
+    if (proj.length > 0) {
+      projectId = proj[0].id;
+      projectSlug = proj[0].slug;
     }
   }
 
@@ -77,18 +80,18 @@ export async function POST(request: NextRequest) {
     .insert(todos)
     .values({
       userId,
-      content,
-      title: parsed.title,
-      memo: parsed.memo,
+      content: title,
+      title,
+      memo: memo ?? null,
       projectId,
-      priority: parsed.priority,
-      deadline: parsed.deadline ? new Date(parsed.deadline) : null,
+      priority: priority ?? "normal",
+      deadline: deadline ? new Date(deadline) : null,
       source: source as "telegram" | "web" | "mcp",
     })
     .returning();
 
   return NextResponse.json({
     ...newTodo,
-    projectSlug: parsed.projectSlug,
+    projectSlug,
   });
 }

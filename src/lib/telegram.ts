@@ -36,3 +36,12 @@ export async function sendTyping(chatId: number) {
   });
 }
 
+export async function deleteMessage(chatId: number, messageId: number): Promise<boolean> {
+  const res = await fetch(`${TELEGRAM_API}/deleteMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+  });
+  return res.ok;
+}
+

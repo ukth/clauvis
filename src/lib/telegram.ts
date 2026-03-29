@@ -4,7 +4,7 @@ function escapeMarkdownV2(text: string): string {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
 }
 
-export async function sendMessage(chatId: number, text: string, parseMode: "MarkdownV2" | "HTML" | false = "MarkdownV2") {
+export async function sendMessage(chatId: number, text: string, parseMode: "MarkdownV2" | "Markdown" | "HTML" | false = "MarkdownV2") {
   const body: Record<string, unknown> = { chat_id: chatId, text };
   if (parseMode) body.parse_mode = parseMode;
 

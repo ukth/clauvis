@@ -19,7 +19,7 @@ Rules:
 - For casual conversation, greetings, or questions, respond directly without tools
 - When relaying tool results to the user, reflect them accurately. Do not fabricate or modify content
 - Do not change the count, names, or content of tool result items
-- Format responses in Telegram HTML: <b>bold</b>, <i>italic</i>, <code>code</code>. Do NOT use Markdown. Only use HTML tags supported by Telegram.`;
+- Format responses in Telegram Markdown: *bold*, _italic_, \`code\`. No special escaping needed.`;
 
 const toolDefinitions: Anthropic.Tool[] = [
   {

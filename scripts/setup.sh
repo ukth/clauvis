@@ -129,7 +129,7 @@ chmod +x "$HOOK_FILE"
 echo "✓ Hook script installed"
 
 # 3. Add MCP server
-claude mcp remove clauvis 2>/dev/null || true
+claude mcp remove clauvis --scope user 2>/dev/null || true
 claude mcp add --transport http --scope user clauvis "$CLAUVIS_URL/api/mcp" \
   --header "Authorization: Bearer $API_KEY" 2>/dev/null
 echo "✓ MCP server configured"

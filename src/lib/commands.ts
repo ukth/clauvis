@@ -41,6 +41,10 @@ export async function handleCommand(
         return await cmdDelProject(args, userId);
       case "/model":
         return await cmdModel(args, userId);
+      case "/setkey":
+        return "Usage: /setkey sk-ant-...\n\nGet your key at console.anthropic.com";
+      case "/delkey":
+        return "Usage: /delkey\n\nRemoves your API Key and switches to command mode.";
       case "/help":
         return cmdHelp();
       default:

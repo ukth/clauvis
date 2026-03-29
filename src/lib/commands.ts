@@ -376,13 +376,29 @@ async function cmdDelProject(
 async function cmdModel(args: string[], userId: string): Promise<string> {
   if (args.length === 0) {
     const [user] = await db
-      .select({ model: users.model })
+      .select({ model: users.model, encryptedAnthropicKey: users.encryptedAnthropicKey })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
 
     const current = user?.model || "sonnet";
+    const hasKey = !!user?.encryptedAnthropicKey;
+
+    if (!hasKey) {
+      return `에이전트 모드를 사용하려면 먼저 API Key를 등록해주세요.\n\n/setkey sk-ant-...`;
+    }
+
     return `현재 모델: ${current}\n\n변경하려면: /model haiku | sonnet | opus`;
+  }
+
+  const [user] = await db
+    .select({ encryptedAnthropicKey: users.encryptedAnthropicKey })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!user?.encryptedAnthropicKey) {
+    return `에이전트 모드를 사용하려면 먼저 API Key를 등록해주세요.\n\n/setkey sk-ant-...`;
   }
 
   const model = args[0].toLowerCase();

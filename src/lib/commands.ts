@@ -342,7 +342,7 @@ async function cmdProjects(userId: string): Promise<string> {
 
   let msg = `📁 프로젝트 ${allProjects.length}개\n\n`;
   for (const p of allProjects) {
-    const display = p.name ? `${p.name} (${p.slug})` : p.slug;
+    const display = p.name ? `${p.name} [${p.slug}]` : p.slug;
     msg += `• ${display}\n`;
   }
 

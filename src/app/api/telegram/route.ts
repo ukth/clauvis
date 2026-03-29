@@ -2,11 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { sendMessage, sendTyping, esc } from "@/lib/telegram";
+import {
+  sendMessage,
+  sendTyping,
+  sendMessageWithKeyboard,
+  editMessageText,
+  answerCallbackQuery,
+  deleteMessage,
+  esc,
+} from "@/lib/telegram";
 import { runAgent, saveMessage } from "@/lib/agent";
 import { isCommand, handleCommand } from "@/lib/commands";
 import { encrypt, decrypt } from "@/lib/crypto";
-import { deleteMessage } from "@/lib/telegram";
 import { randomBytes } from "crypto";
 
 interface TelegramUpdate {
@@ -15,7 +22,64 @@ interface TelegramUpdate {
     chat: { id: number; first_name?: string; username?: string };
     text?: string;
   };
+  callback_query?: {
+    id: string;
+    message: { message_id: number; chat: { id: number } };
+    data: string;
+  };
 }
+
+const HELP_KEYBOARD = [
+  [
+    { text: "📋 할일 관리", callback_data: "help:todo" },
+    { text: "📁 프로젝트 관리", callback_data: "help:project" },
+  ],
+  [
+    { text: "🤖 에이전트 모드", callback_data: "help:agent" },
+    { text: "💡 예시", callback_data: "help:example" },
+  ],
+];
+
+const HELP_SECTIONS: Record<string, string> = {
+  "help:todo": `📋 할일 관리
+
+• /add 할일 내용 #프로젝트 - 할일 추가
+• /list [프로젝트] - 할일 목록
+• /done 번호 - 할일 완료
+• /del 번호 - 할일 삭제
+
+번호는 /list 결과의 번호를 사용합니다.
+프로젝트별 번호도 지원: /done mosun 2`,
+
+  "help:project": `📁 프로젝트 관리
+
+• /newproject slug [이름] - 프로젝트 생성
+• /projects - 프로젝트 목록
+• /delproject slug - 프로젝트 삭제
+
+slug는 영문 소문자와 하이픈으로 지정합니다.
+예: /newproject my-app 나의 앱`,
+
+  "help:agent": `🤖 에이전트 모드
+
+• /setkey sk-ant-... - Claude API Key 등록
+• /delkey - API Key 삭제 (명령어 모드로 전환)
+• /model haiku|sonnet|opus - 모델 변경
+
+API Key를 등록하면 자연어로 할일을 관리할 수 있어요.
+"내일까지 버그 수정해야돼" 같은 메시지를 보내보세요.`,
+
+  "help:example": `💡 사용 예시
+
+/add 이미지 버그 수정 #mosun
+/add 회의 자료 정리
+/list
+/list mosun
+/done 1
+/done mosun 2
+/newproject side-project 사이드 프로젝트
+/model opus`,
+};
 
 async function getUserByChat(chatId: number) {
   const [user] = await db
@@ -54,6 +118,24 @@ export async function POST(request: NextRequest) {
   }
 
   const update: TelegramUpdate = await request.json();
+
+  // Handle callback queries (inline keyboard button clicks)
+  if (update.callback_query) {
+    const { id, message: cbMessage, data } = update.callback_query;
+    await answerCallbackQuery(id);
+
+    const section = HELP_SECTIONS[data];
+    if (section) {
+      await editMessageText(
+        cbMessage.chat.id,
+        cbMessage.message_id,
+        section,
+        HELP_KEYBOARD
+      );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const message = update.message;
 
   if (!message?.text) {
@@ -107,6 +189,16 @@ export async function POST(request: NextRequest) {
       "\n\n" +
       esc("API Key:") + "\n`" + esc(user.apiKey) + "`\n" +
       esc("⚠️ 이 키를 다른 곳에 공유하지 마세요.")
+    );
+    return NextResponse.json({ ok: true });
+  }
+
+  // Handle /help with inline keyboard
+  if (text === "/help" || text.startsWith("/help@")) {
+    await sendMessageWithKeyboard(
+      chatId,
+      "📌 Clauvis 도움말\n\n영역을 선택하세요.",
+      HELP_KEYBOARD
     );
     return NextResponse.json({ ok: true });
   }

@@ -19,7 +19,7 @@ Rules:
 - For casual conversation, greetings, or questions, respond directly without tools
 - When relaying tool results to the user, reflect them accurately. Do not fabricate or modify content
 - Do not change the count, names, or content of tool result items
-- Format responses in Telegram MarkdownV2: *bold*, _italic_, escape special characters (. ! - ( ) > # + = | { } ~) with \\. Use * not **`;
+- Format responses in plain text. Do NOT use Markdown or MarkdownV2 formatting. No escaping needed.`;
 
 const toolDefinitions: Anthropic.Tool[] = [
   {

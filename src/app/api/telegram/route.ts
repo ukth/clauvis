@@ -275,8 +275,8 @@ export async function POST(request: NextRequest) {
     await saveMessage(user.id, "user", text);
     await saveMessage(user.id, "assistant", response);
 
-    // Send response via Telegram (agent formats in MarkdownV2)
-    await sendMessage(chatId, response);
+    // Send response via Telegram (plain text, no markdown)
+    await sendMessage(chatId, response, false);
   } catch (error) {
     console.error("Error processing message:", error);
     await sendMessage(chatId, esc("Something went wrong. Please try again."));

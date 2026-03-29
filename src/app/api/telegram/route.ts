@@ -31,56 +31,56 @@ interface TelegramUpdate {
 
 const HELP_KEYBOARD = [
   [
-    { text: "📋 할일 관리", callback_data: "help:todo" },
-    { text: "📁 프로젝트 관리", callback_data: "help:project" },
+    { text: "📋 Todos", callback_data: "help:todo" },
+    { text: "📁 Projects", callback_data: "help:project" },
   ],
   [
-    { text: "🤖 에이전트 모드", callback_data: "help:agent" },
-    { text: "💡 예시", callback_data: "help:example" },
+    { text: "🤖 Agent Mode", callback_data: "help:agent" },
+    { text: "💡 Examples", callback_data: "help:example" },
   ],
 ];
 
 const HELP_SECTIONS: Record<string, string> = {
-  "help:todo": `📋 할일 관리
+  "help:todo": `📋 Todo Management
 
-• /add 할일 내용 #프로젝트 - 할일 추가
-• /list [프로젝트] - 할일 목록
-• /done 번호 - 할일 완료
-• /del 번호 - 할일 삭제
+• /add content #project - Add todo
+• /list [project] - List todos
+• /view number - View todo detail
+• /done number - Complete todo
+• /del number - Delete todo
 
-번호는 /list 결과의 번호를 사용합니다.
-프로젝트별 번호도 지원: /done mosun 2
+Numbers are stable IDs from /list.
 
-💡 줄바꿈(Shift+Enter) 이후는 메모로 저장됩니다.`,
+💡 Lines after the first (Shift+Enter) become a memo.`,
 
-  "help:project": `📁 프로젝트 관리
+  "help:project": `📁 Project Management
 
-• /newproject slug [이름] - 프로젝트 생성
-• /projects - 프로젝트 목록
-• /delproject slug - 프로젝트 삭제
+• /newproject slug [name] - Create project
+• /projects - List projects
+• /delproject slug - Delete project
 
-slug는 영문 소문자와 하이픈으로 지정합니다.
-예: /newproject my-app 나의 앱`,
+Slug should be lowercase with hyphens.
+e.g. /newproject my-app My App`,
 
-  "help:agent": `🤖 에이전트 모드
+  "help:agent": `🤖 Agent Mode
 
-• /setkey sk-ant-... - Claude API Key 등록
-• /delkey - API Key 삭제 (명령어 모드로 전환)
-• /model haiku|sonnet|opus - 모델 변경
+• /setkey sk-ant-... - Register Claude API Key
+• /delkey - Remove API Key (switch to command mode)
+• /model haiku|sonnet|opus - Change model
 
-API Key를 등록하면 자연어로 할일을 관리할 수 있어요.
-"내일까지 버그 수정해야돼" 같은 메시지를 보내보세요.`,
+With an API Key, you can manage todos in natural language.
+Try sending "fix the image bug by tomorrow".`,
 
-  "help:example": `💡 사용 예시
+  "help:example": `💡 Examples
 
-/add 이미지 버그 수정 #mosun
-/add 회의 자료 정리
-줄바꿈 이후는 메모로 저장
+/add fix image bug #mosun
+/add prepare meeting notes
+second line becomes memo
 /list
 /list mosun
-/done 1
-/done mosun 2
-/newproject side-project 사이드 프로젝트
+/done 42
+/view 42
+/newproject side-project Side Project
 /model opus`,
 };
 
@@ -101,7 +101,7 @@ async function handleStart(chatId: number, apiKey: string) {
     .limit(1);
 
   if (!user) {
-    await sendMessage(chatId, esc("유효하지 않은 API 키예요."));
+    await sendMessage(chatId, esc("Invalid API key."));
     return;
   }
 
@@ -110,7 +110,7 @@ async function handleStart(chatId: number, apiKey: string) {
     .set({ telegramChatId: String(chatId) })
     .where(eq(users.id, user.id));
 
-  await sendMessage(chatId, esc(`${user.name}님, 연동 완료! 이제 할일을 보내보세요.`));
+  await sendMessage(chatId, esc(`${user.name}, linked! Start sending your todos.`));
 }
 
 export async function POST(request: NextRequest) {
@@ -169,18 +169,18 @@ export async function POST(request: NextRequest) {
       user = newUser;
       await sendMessage(
         chatId,
-        esc(`환영합니다, ${user.name}님! 🎉`) +
+        esc(`Welcome, ${user.name}! 🎉`) +
         "\n\n" +
         esc("API Key:") + "\n`" + esc(user.apiKey) + "`\n" +
-        esc("⚠️ 이 키를 다른 곳에 공유하지 마세요.") + "\n\n" +
-        esc("📌 Claude Code 연동하기:") + "\n" +
-        esc("터미널에서 아래 명령어를 실행하세요:") + "\n\n" +
+        esc("⚠️ Do not share this key with anyone.") + "\n\n" +
+        esc("📌 Connect to Claude Code:") + "\n" +
+        esc("Run this in your terminal:") + "\n\n" +
         "`curl \\-sL https://raw\\.githubusercontent\\.com/ukth/clauvis/main/scripts/setup\\.sh \\| bash`\n\n" +
-        esc("이제 할일을 자유롭게 보내보세요!")
+        esc("You're all set! Start sending todos.")
       );
       return NextResponse.json({ ok: true });
     }
-    await sendMessage(chatId, esc("처음이시군요! /start 를 보내서 시작해주세요."));
+    await sendMessage(chatId, esc("Welcome! Send /start to get started."));
     return NextResponse.json({ ok: true });
   }
 
@@ -188,10 +188,10 @@ export async function POST(request: NextRequest) {
   if (text === "/start") {
     await sendMessage(
       chatId,
-      esc(`${user.name}님, 이미 가입되어 있어요.`) +
+      esc(`${user.name}, you're already registered.`) +
       "\n\n" +
       esc("API Key:") + "\n`" + esc(user.apiKey) + "`\n" +
-      esc("⚠️ 이 키를 다른 곳에 공유하지 마세요.")
+      esc("⚠️ Do not share this key with anyone.")
     );
     return NextResponse.json({ ok: true });
   }
@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
   if (text === "/help" || text.startsWith("/help@")) {
     await sendMessageWithKeyboard(
       chatId,
-      "📌 Clauvis 도움말\n\n영역을 선택하세요.",
+      "📌 Clauvis Help\n\nChoose a section.",
       HELP_KEYBOARD
     );
     return NextResponse.json({ ok: true });
@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
     const deleted = await deleteMessage(chatId, message.message_id);
 
     if (!apiKey.startsWith("sk-ant-")) {
-      await sendMessage(chatId, "유효한 Anthropic API Key를 입력해주세요.\n예: /setkey sk-ant-...", false);
+      await sendMessage(chatId, "Please enter a valid Anthropic API Key.\ne.g. /setkey sk-ant-...", false);
       return NextResponse.json({ ok: true });
     }
 
@@ -222,8 +222,8 @@ export async function POST(request: NextRequest) {
       .set({ encryptedAnthropicKey: encrypted })
       .where(eq(users.id, user.id));
 
-    const warning = deleted ? "" : "\n\n⚠️ 메시지 삭제에 실패했어요. 보안을 위해 직접 삭제해주세요.";
-    await sendMessage(chatId, `🔑 API Key가 등록되었어요. 이제 에이전트 모드를 사용할 수 있습니다!${warning}`, false);
+    const warning = deleted ? "" : "\n\n⚠️ Failed to delete the message. Please delete it manually for security.";
+    await sendMessage(chatId, `🔑 API Key registered! Agent mode is now available.${warning}`, false);
     return NextResponse.json({ ok: true });
   }
 
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
       .set({ encryptedAnthropicKey: null })
       .where(eq(users.id, user.id));
 
-    await sendMessage(chatId, "🔑 API Key가 삭제되었어요. 명령어 모드로 전환됩니다.", false);
+    await sendMessage(chatId, "🔑 API Key removed. Switched to command mode.", false);
     return NextResponse.json({ ok: true });
   }
 
@@ -245,7 +245,7 @@ export async function POST(request: NextRequest) {
       await sendMessage(chatId, response, false);
     } catch (error) {
       console.error("Command error:", error);
-      await sendMessage(chatId, "명령어 처리 중 오류가 발생했어요.", false);
+      await sendMessage(chatId, "Something went wrong. Please try again.", false);
     }
     return NextResponse.json({ ok: true });
   }
@@ -255,7 +255,7 @@ export async function POST(request: NextRequest) {
   if (!encryptedKey) {
     await sendMessage(
       chatId,
-      "에이전트 모드를 사용하려면 Claude API Key 등록이 필요해요.\n\n/setkey sk-ant-... 로 키를 등록하거나,\n/help 로 명령어 모드 사용법을 확인하세요.",
+      "Agent mode requires a Claude API Key.\n\nRegister with /setkey sk-ant-...\nor try /help for command mode.",
       false
     );
     return NextResponse.json({ ok: true });
@@ -279,7 +279,7 @@ export async function POST(request: NextRequest) {
     await sendMessage(chatId, response);
   } catch (error) {
     console.error("Error processing message:", error);
-    await sendMessage(chatId, esc("처리 중 오류가 발생했어요. 다시 시도해주세요."));
+    await sendMessage(chatId, esc("Something went wrong. Please try again."));
   }
 
   return NextResponse.json({ ok: true });

@@ -14,7 +14,7 @@ export async function handleCommand(
   userId: string
 ): Promise<string> {
   const parts = text.split(/\s+/);
-  const command = parts[0].toLowerCase().split("@")[0]; // strip @botname
+  const command = parts[0].toLowerCase().split("@")[0];
   const args = parts.slice(1);
 
   try {
@@ -40,11 +40,11 @@ export async function handleCommand(
       case "/help":
         return cmdHelp();
       default:
-        return "알 수 없는 명령어예요. /help 로 사용법을 확인하세요.";
+        return "Unknown command. Try /help for usage.";
     }
   } catch (error) {
     console.error("Command error:", error);
-    return "명령어 처리 중 오류가 발생했어요.";
+    return "Something went wrong. Please try again.";
   }
 }
 
@@ -99,7 +99,7 @@ async function findTodoByNumber(userId: string, num: number) {
 
 async function cmdAdd(args: string[], userId: string, rawText: string): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /add 할일 내용 #프로젝트\n\n줄바꿈 이후는 메모로 저장됩니다.";
+    return "Usage: /add content #project\n\nLines after the first become a memo.";
   }
 
   const commandRemoved = rawText.replace(/^\/add(@\S+)?\s*/, "");
@@ -120,7 +120,7 @@ async function cmdAdd(args: string[], userId: string, rawText: string): Promise<
 
   const title = titleParts.join(" ");
   if (!title) {
-    return "할일 내용을 입력해주세요.";
+    return "Please enter todo content.";
   }
 
   let projectId: string | null = null;
@@ -129,7 +129,7 @@ async function cmdAdd(args: string[], userId: string, rawText: string): Promise<
   if (projectSlug) {
     const project = await findProject(userId, projectSlug);
     if (!project) {
-      return `"${projectSlug}" 프로젝트를 찾을 수 없어요. /projects 로 목록을 확인하세요.`;
+      return `Project "${projectSlug}" not found. Check /projects for the list.`;
     }
     projectId = project.id;
     projectDisplay = project.name || project.slug;
@@ -160,7 +160,7 @@ async function cmdList(args: string[], userId: string): Promise<string> {
   if (projectSlug) {
     const project = await findProject(userId, projectSlug);
     if (!project) {
-      return `"${projectSlug}" 프로젝트를 찾을 수 없어요.`;
+      return `Project "${projectSlug}" not found.`;
     }
     conditions.push(eq(todos.projectId, project.id));
   }
@@ -181,19 +181,19 @@ async function cmdList(args: string[], userId: string): Promise<string> {
 
   if (result.length === 0) {
     const label = projectSlug ? `[${projectSlug}] ` : "";
-    return `${label}할일이 없어요! 🎉`;
+    return `${label}No todos! 🎉`;
   }
 
   // Group by project for display
   const grouped = new Map<string, { display: string; items: typeof result }>();
   for (const todo of result) {
     const key = todo.projectSlug || "__none__";
-    const display = todo.projectName || todo.projectSlug || "미분류";
+    const display = todo.projectName || todo.projectSlug || "Uncategorized";
     if (!grouped.has(key)) grouped.set(key, { display, items: [] });
     grouped.get(key)!.items.push(todo);
   }
 
-  let msg = `📋 할일 ${result.length}개\n`;
+  let msg = `📋 ${result.length} todos\n`;
 
   for (const [, group] of grouped) {
     msg += `\n[${group.display}]\n`;
@@ -211,20 +211,20 @@ async function cmdList(args: string[], userId: string): Promise<string> {
 
 async function cmdDone(args: string[], userId: string): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /done 번호";
+    return "Usage: /done number";
   }
 
   const num = parseInt(args[0]);
   if (isNaN(num)) {
-    return "올바른 번호를 입력해주세요.";
+    return "Please enter a valid number.";
   }
 
   const todo = await findTodoByNumber(userId, num);
   if (!todo) {
-    return `#${num} 할일을 찾을 수 없어요.`;
+    return `Todo #${num} not found.`;
   }
   if (todo.status === "done") {
-    return `#${num} ${todo.title}은(는) 이미 완료되었어요.`;
+    return `#${num} ${todo.title} is already done.`;
   }
 
   await db
@@ -232,62 +232,62 @@ async function cmdDone(args: string[], userId: string): Promise<string> {
     .set({ status: "done", completedAt: new Date() })
     .where(eq(todos.id, todo.id));
 
-  return `✅ 완료: #${num} ${todo.title}`;
+  return `✅ Done: #${num} ${todo.title}`;
 }
 
 async function cmdDel(args: string[], userId: string): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /del 번호";
+    return "Usage: /del number";
   }
 
   const num = parseInt(args[0]);
   if (isNaN(num)) {
-    return "올바른 번호를 입력해주세요.";
+    return "Please enter a valid number.";
   }
 
   const todo = await findTodoByNumber(userId, num);
   if (!todo) {
-    return `#${num} 할일을 찾을 수 없어요.`;
+    return `Todo #${num} not found.`;
   }
 
   await db.delete(todos).where(eq(todos.id, todo.id));
 
-  return `🗑 삭제: #${num} ${todo.title}`;
+  return `🗑 Deleted: #${num} ${todo.title}`;
 }
 
 async function cmdView(args: string[], userId: string): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /view 번호";
+    return "Usage: /view number";
   }
 
   const num = parseInt(args[0]);
   if (isNaN(num)) {
-    return "올바른 번호를 입력해주세요.";
+    return "Please enter a valid number.";
   }
 
   const todo = await findTodoByNumber(userId, num);
   if (!todo) {
-    return `#${num} 할일을 찾을 수 없어요.`;
+    return `Todo #${num} not found.`;
   }
 
-  const project = todo.projectName || todo.projectSlug || "미분류";
-  const priority = todo.priority !== "normal" ? `\n우선순위: ${todo.priority}` : "";
+  const project = todo.projectName || todo.projectSlug || "Uncategorized";
+  const priority = todo.priority !== "normal" ? `\nPriority: ${todo.priority}` : "";
   const deadline = todo.deadline
-    ? `\n기한: ${todo.deadline.toISOString().split("T")[0]}`
+    ? `\nDeadline: ${todo.deadline.toISOString().split("T")[0]}`
     : "";
   const memo = todo.memo ? `\n\n📝 ${todo.memo}` : "";
-  const status = todo.status === "done" ? "완료" : "진행중";
+  const status = todo.status === "done" ? "Done" : "Pending";
   const completed = todo.completedAt
-    ? `\n완료일: ${todo.completedAt.toISOString().split("T")[0]}`
+    ? `\nCompleted: ${todo.completedAt.toISOString().split("T")[0]}`
     : "";
   const created = todo.createdAt.toISOString().split("T")[0];
 
   return `#${num} ${todo.title}
 
-프로젝트: ${project}
-상태: ${status}${priority}${deadline}
-생성일: ${created}${completed}
-출처: ${todo.source}${memo}`;
+Project: ${project}
+Status: ${status}${priority}${deadline}
+Created: ${created}${completed}
+Source: ${todo.source}${memo}`;
 }
 
 async function cmdNewProject(
@@ -295,7 +295,7 @@ async function cmdNewProject(
   userId: string
 ): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /newproject slug [표시이름]";
+    return "Usage: /newproject slug [display name]";
   }
 
   const slug = args[0].toLowerCase();
@@ -308,12 +308,12 @@ async function cmdNewProject(
     .limit(1);
 
   if (existing) {
-    return `"${existing.name || existing.slug}" 프로젝트가 이미 있어요.`;
+    return `Project "${existing.name || existing.slug}" already exists.`;
   }
 
   await db.insert(projects).values({ userId, slug, name });
 
-  return `📁 프로젝트 생성: ${name || slug}`;
+  return `📁 Project created: ${name || slug}`;
 }
 
 async function cmdProjects(userId: string): Promise<string> {
@@ -323,10 +323,10 @@ async function cmdProjects(userId: string): Promise<string> {
     .where(eq(projects.userId, userId));
 
   if (allProjects.length === 0) {
-    return "등록된 프로젝트가 없어요. /newproject 로 추가하세요.";
+    return "No projects yet. Create one with /newproject.";
   }
 
-  let msg = `📁 프로젝트 ${allProjects.length}개\n\n`;
+  let msg = `📁 ${allProjects.length} projects\n\n`;
   for (const p of allProjects) {
     const display = p.name ? `${p.name} [${p.slug}]` : p.slug;
     msg += `• ${display}\n`;
@@ -340,7 +340,7 @@ async function cmdDelProject(
   userId: string
 ): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /delproject slug";
+    return "Usage: /delproject slug";
   }
 
   const slug = args[0].toLowerCase();
@@ -351,12 +351,12 @@ async function cmdDelProject(
     .limit(1);
 
   if (!target) {
-    return `"${slug}" 프로젝트를 찾을 수 없어요.`;
+    return `Project "${slug}" not found.`;
   }
 
   await db.delete(projects).where(eq(projects.id, target.id));
 
-  return `🗑 프로젝트 삭제: ${target.name || target.slug}`;
+  return `🗑 Project deleted: ${target.name || target.slug}`;
 }
 
 async function cmdModel(args: string[], userId: string): Promise<string> {
@@ -371,10 +371,10 @@ async function cmdModel(args: string[], userId: string): Promise<string> {
     const hasKey = !!user?.encryptedAnthropicKey;
 
     if (!hasKey) {
-      return `에이전트 모드를 사용하려면 먼저 API Key를 등록해주세요.\n\n/setkey sk-ant-...`;
+      return "Register your API Key first to use agent mode.\n\n/setkey sk-ant-...";
     }
 
-    return `현재 모델: ${current}\n\n변경하려면: /model haiku | sonnet | opus`;
+    return `Current model: ${current}\n\nChange with: /model haiku | sonnet | opus`;
   }
 
   const [user] = await db
@@ -384,12 +384,12 @@ async function cmdModel(args: string[], userId: string): Promise<string> {
     .limit(1);
 
   if (!user?.encryptedAnthropicKey) {
-    return `에이전트 모드를 사용하려면 먼저 API Key를 등록해주세요.\n\n/setkey sk-ant-...`;
+    return "Register your API Key first to use agent mode.\n\n/setkey sk-ant-...";
   }
 
   const model = args[0].toLowerCase();
   if (!VALID_MODELS.includes(model as (typeof VALID_MODELS)[number])) {
-    return `사용 가능한 모델: haiku, sonnet, opus`;
+    return "Available models: haiku, sonnet, opus";
   }
 
   await db
@@ -397,31 +397,31 @@ async function cmdModel(args: string[], userId: string): Promise<string> {
     .set({ model })
     .where(eq(users.id, userId));
 
-  return `🤖 모델 변경: ${model}`;
+  return `🤖 Model changed: ${model}`;
 }
 
 function cmdHelp(): string {
-  return `📌 Clauvis 명령어
+  return `📌 Clauvis Commands
 
-[할일 관리]
-• /add 할일 내용 #프로젝트 - 할일 추가 (줄바꿈 후 메모)
-• /list [프로젝트] - 할일 목록
-• /view 번호 - 할일 상세 조회
-• /done 번호 - 할일 완료
-• /del 번호 - 할일 삭제
+[Todos]
+• /add content #project - Add todo (newline for memo)
+• /list [project] - List todos
+• /view number - View todo detail
+• /done number - Complete todo
+• /del number - Delete todo
 
-[프로젝트 관리]
-• /newproject slug [이름] - 프로젝트 생성
-• /projects - 프로젝트 목록
-• /delproject slug - 프로젝트 삭제
+[Projects]
+• /newproject slug [name] - Create project
+• /projects - List projects
+• /delproject slug - Delete project
 
-[에이전트 모드]
-• /setkey sk-ant-... - Claude API Key 등록
-• /delkey - API Key 삭제 (명령어 모드로 전환)
-• /model haiku|sonnet|opus - 모델 변경
+[Agent Mode]
+• /setkey sk-ant-... - Register Claude API Key
+• /delkey - Remove API Key
+• /model haiku|sonnet|opus - Change model
 
-[예시]
-/add 이미지 버그 수정 #mosun
+[Examples]
+/add fix image bug #mosun
 /list mosun
 /view 42
 /done 42`;

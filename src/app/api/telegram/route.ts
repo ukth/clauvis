@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
         esc("⚠️ 이 키를 다른 곳에 공유하지 마세요.") + "\n\n" +
         esc("📌 Claude Code 연동하기:") + "\n" +
         esc("터미널에서 아래 명령어를 실행하세요:") + "\n\n" +
-        "`bash \\<\\(curl \\-sL https://raw\\.githubusercontent\\.com/ukth/clauvis/main/scripts/setup\\.sh\\)`\n\n" +
+        "`curl \\-sL https://raw\\.githubusercontent\\.com/ukth/clauvis/main/scripts/setup\\.sh \\| bash`\n\n" +
         esc("이제 할일을 자유롭게 보내보세요!")
       );
       return NextResponse.json({ ok: true });

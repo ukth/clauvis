@@ -19,7 +19,7 @@ Clauvis is a todo management service designed for developers who juggle multiple
 
 ### 1. Get your API key
 
-Message [@ukth_clauvis_bot](https://t.me/ukth_clauvis_bot) on Telegram and send `/start`.
+Message [@clauvis_ai_bot](https://t.me/clauvis_ai_bot) on Telegram and send `/start`.
 
 ### 2. Set up Claude Code integration
 

@@ -6,7 +6,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
           <span className="font-mono text-sm tracking-wider text-accent">clauvis</span>
           <div className="flex items-center gap-6">
-            <a href="https://t.me/ukth_clauvis_bot" target="_blank" className="text-sm text-muted hover:text-foreground transition-colors">Telegram</a>
+            <a href="https://t.me/clauvis_ai_bot" target="_blank" className="text-sm text-muted hover:text-foreground transition-colors">Telegram</a>
             <a href="https://github.com/ukth/clauvis" target="_blank" className="text-sm text-muted hover:text-foreground transition-colors">GitHub</a>
           </div>
         </div>
@@ -28,7 +28,7 @@ export default function Home() {
           </p>
           <div className="animate-fade-up-delay-2 mt-10 flex flex-wrap gap-4 items-center">
             <a
-              href="https://t.me/ukth_clauvis_bot"
+              href="https://t.me/clauvis_ai_bot"
               target="_blank"
               className="px-5 py-2.5 bg-accent text-background text-sm font-medium rounded hover:bg-accent-dim transition-colors"
             >
@@ -129,8 +129,8 @@ export default function Home() {
             <Step n="1" title="Get your API key">
               <p className="text-muted text-sm">
                 Message{" "}
-                <a href="https://t.me/ukth_clauvis_bot" target="_blank" className="text-accent hover:underline">
-                  @ukth_clauvis_bot
+                <a href="https://t.me/clauvis_ai_bot" target="_blank" className="text-accent hover:underline">
+                  @clauvis_ai_bot
                 </a>{" "}
                 on Telegram and send{" "}
                 <code className="text-foreground bg-surface-2 px-1.5 py-0.5 rounded text-xs font-mono">/start</code>
@@ -159,7 +159,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <span className="font-mono text-xs text-muted">clauvis</span>
           <div className="flex items-center gap-6 text-xs text-muted">
-            <a href="https://t.me/ukth_clauvis_bot" target="_blank" className="hover:text-foreground transition-colors">Telegram</a>
+            <a href="https://t.me/clauvis_ai_bot" target="_blank" className="hover:text-foreground transition-colors">Telegram</a>
             <a href="https://github.com/ukth/clauvis" target="_blank" className="hover:text-foreground transition-colors">GitHub</a>
           </div>
         </div>

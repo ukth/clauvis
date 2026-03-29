@@ -264,9 +264,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Save user message to chat history
-    await saveMessage(user.id, "user", text);
-
     // Show typing indicator
     await sendTyping(chatId);
 
@@ -274,7 +271,8 @@ export async function POST(request: NextRequest) {
     const apiKey = decrypt(encryptedKey);
     const response = await runAgent(text, user.id, apiKey, user.model);
 
-    // Save bot response to chat history
+    // Save messages to chat history (after runAgent to avoid duplicate in history)
+    await saveMessage(user.id, "user", text);
     await saveMessage(user.id, "assistant", response);
 
     // Send response via Telegram (agent formats in MarkdownV2)

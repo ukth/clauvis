@@ -202,6 +202,51 @@ function createServer(userId: string) {
   );
 
   server.registerTool(
+    "delete_todo",
+    {
+      title: "Delete Todo",
+      description: "할일을 삭제합니다. 번호(목록 순서) 또는 할일 제목으로 지정합니다.",
+      inputSchema: {
+        target: z.string().describe("삭제할 할일 번호(1부터) 또는 제목 키워드"),
+      },
+    },
+    async ({ target }) => {
+      const pendingTodos = await db
+        .select({ id: todos.id, title: todos.title })
+        .from(todos)
+        .where(and(eq(todos.userId, userId), eq(todos.status, "pending")))
+        .orderBy(desc(todos.createdAt));
+
+      const num = parseInt(target);
+      let matched;
+
+      if (!isNaN(num) && num >= 1 && num <= pendingTodos.length) {
+        matched = pendingTodos[num - 1];
+      } else {
+        matched = pendingTodos.find((t) =>
+          t.title.toLowerCase().includes(target.toLowerCase())
+        );
+      }
+
+      if (!matched) {
+        return {
+          content: [
+            { type: "text" as const, text: `"${target}"에 해당하는 할일을 찾지 못했습니다.` },
+          ],
+        };
+      }
+
+      await db.delete(todos).where(eq(todos.id, matched.id));
+
+      return {
+        content: [
+          { type: "text" as const, text: `🗑 ${matched.title} 삭제 완료` },
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
     "update_todo",
     {
       title: "Update Todo",
@@ -340,6 +385,40 @@ function createServer(userId: string) {
       return {
         content: [
           { type: "text" as const, text: `📁 ${displayName} 프로젝트 추가했습니다.` },
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
+    "delete_project",
+    {
+      title: "Delete Project",
+      description: "프로젝트를 삭제합니다. 해당 프로젝트의 할일은 미분류로 이동됩니다.",
+      inputSchema: {
+        slug: z.string().describe("삭제할 프로젝트 slug"),
+      },
+    },
+    async ({ slug }) => {
+      const [target] = await db
+        .select()
+        .from(projects)
+        .where(and(eq(projects.slug, slug), eq(projects.userId, userId)))
+        .limit(1);
+
+      if (!target) {
+        return {
+          content: [
+            { type: "text" as const, text: `"${slug}" 프로젝트를 찾지 못했습니다.` },
+          ],
+        };
+      }
+
+      await db.delete(projects).where(eq(projects.id, target.id));
+
+      return {
+        content: [
+          { type: "text" as const, text: `🗑 ${target.name || target.slug} 프로젝트 삭제 완료` },
         ],
       };
     }

@@ -148,7 +148,7 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
               {t.startBtn}
             </a>
             <span className="text-muted text-sm">{t.or}</span>
-            <code className="text-sm font-mono text-muted bg-surface px-3 py-2 rounded border border-border select-all cursor-pointer hover:border-accent/40 transition-colors">
+            <code className="text-sm font-mono text-muted bg-surface px-3 py-2 rounded border border-border select-all cursor-pointer hover:border-accent/40 transition-colors break-all">
               curl -sL raw.githubusercontent.com/ukth/clauvis/main/scripts/setup.sh | bash
             </code>
           </div>
@@ -263,9 +263,9 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
               </p>
             </Step>
             <Step n="2" title={t.step2Title}>
-              <div className="bg-surface rounded border border-border p-4 font-mono text-sm group">
+              <div className="bg-surface rounded border border-border p-4 font-mono text-sm group overflow-x-auto">
                 <span className="text-muted">$ </span>
-                <span className="text-foreground select-all">
+                <span className="text-foreground select-all break-all">
                   curl -sL https://raw.githubusercontent.com/ukth/clauvis/main/scripts/setup.sh | bash
                 </span>
               </div>

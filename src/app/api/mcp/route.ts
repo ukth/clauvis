@@ -51,6 +51,7 @@ function createServer(userId: string) {
       const result = await db
         .select({
           id: todos.id,
+          number: todos.number,
           title: todos.title,
           memo: todos.memo,
           priority: todos.priority,
@@ -69,12 +70,12 @@ function createServer(userId: string) {
       }
 
       const text = result
-        .map((t, i) => {
+        .map((t) => {
           const deadline = t.deadline
             ? ` (기한: ${t.deadline.toISOString().split("T")[0]})`
             : "";
           const proj = (t.projectName || t.projectSlug) ? `[${t.projectName || t.projectSlug}] ` : "";
-          return `${i + 1}. ${proj}${t.title}${deadline}`;
+          return `#${t.number}. ${proj}${t.title}${deadline}`;
         })
         .join("\n");
 
@@ -151,26 +152,29 @@ function createServer(userId: string) {
     {
       title: "Complete Todo",
       description:
-        "할일을 완료 처리합니다. 번호(목록 순서) 또는 할일 제목으로 지정합니다.",
+        "할일을 완료 처리합니다. 할일 고유 번호(#number) 또는 제목 키워드로 지정합니다.",
       inputSchema: {
         target: z
           .string()
-          .describe("완료할 할일 번호(1부터) 또는 제목 키워드"),
+          .describe("완료할 할일의 고유 번호(#number) 또는 제목 키워드"),
       },
     },
     async ({ target }) => {
-      const pendingTodos = await db
-        .select({ id: todos.id, title: todos.title })
-        .from(todos)
-        .where(and(eq(todos.userId, userId), eq(todos.status, "pending")))
-        .orderBy(desc(todos.createdAt));
-
       const num = parseInt(target);
       let matched;
 
-      if (!isNaN(num) && num >= 1 && num <= pendingTodos.length) {
-        matched = pendingTodos[num - 1];
+      if (!isNaN(num)) {
+        const [todo] = await db
+          .select({ id: todos.id, title: todos.title })
+          .from(todos)
+          .where(and(eq(todos.userId, userId), eq(todos.number, num)))
+          .limit(1);
+        matched = todo;
       } else {
+        const pendingTodos = await db
+          .select({ id: todos.id, title: todos.title })
+          .from(todos)
+          .where(and(eq(todos.userId, userId), eq(todos.status, "pending")));
         matched = pendingTodos.find((t) =>
           t.title.toLowerCase().includes(target.toLowerCase())
         );
@@ -196,7 +200,7 @@ function createServer(userId: string) {
         content: [
           {
             type: "text" as const,
-            text: `✓ ${matched.title} 완료! 남은 할일 ${pendingTodos.length - 1}개`,
+            text: `✓ #${num || ''} ${matched.title} 완료!`,
           },
         ],
       };
@@ -207,25 +211,28 @@ function createServer(userId: string) {
     "delete_todo",
     {
       title: "Delete Todo",
-      description: "할일을 삭제합니다. 번호(목록 순서) 또는 할일 제목으로 지정합니다.",
+      description: "할일을 삭제합니다. 할일 고유 번호(#number) 또는 제목 키워드로 지정합니다.",
       inputSchema: {
-        target: z.string().describe("삭제할 할일 번호(1부터) 또는 제목 키워드"),
+        target: z.string().describe("삭제할 할일의 고유 번호(#number) 또는 제목 키워드"),
       },
     },
     async ({ target }) => {
-      const pendingTodos = await db
-        .select({ id: todos.id, title: todos.title })
-        .from(todos)
-        .where(and(eq(todos.userId, userId), eq(todos.status, "pending")))
-        .orderBy(desc(todos.createdAt));
-
       const num = parseInt(target);
       let matched;
 
-      if (!isNaN(num) && num >= 1 && num <= pendingTodos.length) {
-        matched = pendingTodos[num - 1];
+      if (!isNaN(num)) {
+        const [todo] = await db
+          .select({ id: todos.id, title: todos.title })
+          .from(todos)
+          .where(and(eq(todos.userId, userId), eq(todos.number, num)))
+          .limit(1);
+        matched = todo;
       } else {
-        matched = pendingTodos.find((t) =>
+        const allTodos = await db
+          .select({ id: todos.id, title: todos.title })
+          .from(todos)
+          .where(and(eq(todos.userId, userId), eq(todos.status, "pending")));
+        matched = allTodos.find((t) =>
           t.title.toLowerCase().includes(target.toLowerCase())
         );
       }
@@ -242,7 +249,7 @@ function createServer(userId: string) {
 
       return {
         content: [
-          { type: "text" as const, text: `🗑 ${matched.title} 삭제 완료` },
+          { type: "text" as const, text: `🗑 #${num || ''} ${matched.title} 삭제 완료` },
         ],
       };
     }
@@ -254,7 +261,7 @@ function createServer(userId: string) {
       title: "Update Todo",
       description: "할일의 제목, 메모, 우선순위, 기한을 수정합니다.",
       inputSchema: {
-        target: z.string().describe("수정할 할일 번호(1부터) 또는 제목 키워드"),
+        target: z.string().describe("수정할 할일의 고유 번호(#number) 또는 제목 키워드"),
         title: z.string().optional().describe("변경할 제목"),
         memo: z.string().optional().describe("변경할 메모"),
         priority: z.enum(["urgent", "normal", "low"]).optional().describe("변경할 우선순위"),
@@ -262,19 +269,22 @@ function createServer(userId: string) {
       },
     },
     async ({ target, title, memo, priority, deadline }) => {
-      const pendingTodos = await db
-        .select({ id: todos.id, title: todos.title })
-        .from(todos)
-        .where(and(eq(todos.userId, userId), eq(todos.status, "pending")))
-        .orderBy(desc(todos.createdAt));
-
       const num = parseInt(target);
       let matched;
 
-      if (!isNaN(num) && num >= 1 && num <= pendingTodos.length) {
-        matched = pendingTodos[num - 1];
+      if (!isNaN(num)) {
+        const [todo] = await db
+          .select({ id: todos.id, title: todos.title })
+          .from(todos)
+          .where(and(eq(todos.userId, userId), eq(todos.number, num)))
+          .limit(1);
+        matched = todo;
       } else {
-        matched = pendingTodos.find((t) =>
+        const allTodos = await db
+          .select({ id: todos.id, title: todos.title })
+          .from(todos)
+          .where(and(eq(todos.userId, userId), eq(todos.status, "pending")));
+        matched = allTodos.find((t) =>
           t.title.toLowerCase().includes(target.toLowerCase())
         );
       }

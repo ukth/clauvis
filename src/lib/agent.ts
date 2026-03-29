@@ -136,6 +136,20 @@ const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: "view_todo",
+    description: "View detailed info of a single todo by its #number. Shows title, memo, project, priority, deadline, status.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        number: {
+          type: "number",
+          description: "Todo #number",
+        },
+      },
+      required: ["number"],
+    },
+  },
+  {
     name: "list_projects",
     description: "List all registered projects.",
     input_schema: {
@@ -193,6 +207,7 @@ async function execListTodos(
 
   const result = await db
     .select({
+      number: todos.number,
       title: todos.title,
       priority: todos.priority,
       deadline: todos.deadline,
@@ -220,14 +235,12 @@ async function execListTodos(
   for (const [, group] of Object.entries(grouped)) {
     message += `\n[${group.display}]\n`;
     const items = group.items;
-    let index = 1;
     for (const item of items) {
       const deadlineStr = item.deadline
         ? ` (deadline: ${item.deadline.toISOString().split("T")[0]})`
         : "";
       const priorityStr = item.priority !== "normal" ? ` [${item.priority}]` : "";
-      message += `${index}. ${item.title}${priorityStr}${deadlineStr}\n`;
-      index++;
+      message += `#${item.number}. ${item.title}${priorityStr}${deadlineStr}\n`;
     }
   }
 
@@ -398,6 +411,48 @@ function findTodoByInput(
   return null;
 }
 
+async function execViewTodo(
+  userId: string,
+  input: { number: number }
+): Promise<string> {
+  const [todo] = await db
+    .select({
+      number: todos.number,
+      title: todos.title,
+      memo: todos.memo,
+      priority: todos.priority,
+      deadline: todos.deadline,
+      status: todos.status,
+      source: todos.source,
+      projectName: projects.name,
+      projectSlug: projects.slug,
+      createdAt: todos.createdAt,
+      completedAt: todos.completedAt,
+    })
+    .from(todos)
+    .leftJoin(projects, eq(todos.projectId, projects.id))
+    .where(and(eq(todos.userId, userId), eq(todos.number, input.number)))
+    .limit(1);
+
+  if (!todo) {
+    return `Todo #${input.number} not found.`;
+  }
+
+  const project = todo.projectName || todo.projectSlug || "Uncategorized";
+  const priority = todo.priority !== "normal" ? `\nPriority: ${todo.priority}` : "";
+  const deadline = todo.deadline
+    ? `\nDeadline: ${todo.deadline.toISOString().split("T")[0]}`
+    : "";
+  const memo = todo.memo ? `\nMemo: ${todo.memo}` : "";
+  const status = todo.status === "done" ? "Done" : "Pending";
+  const completed = todo.completedAt
+    ? `\nCompleted: ${todo.completedAt.toISOString().split("T")[0]}`
+    : "";
+  const created = todo.createdAt.toISOString().split("T")[0];
+
+  return `#${todo.number} ${todo.title}\nProject: ${project}\nStatus: ${status}${priority}${deadline}\nCreated: ${created}${completed}${memo}`;
+}
+
 async function execListProjects(userId: string): Promise<string> {
   const allProjects = await db
     .select()
@@ -486,6 +541,8 @@ async function executeTool(
         project_slug?: string; number?: number; keyword?: string;
         title?: string; memo?: string; priority?: string; deadline?: string;
       });
+    case "view_todo":
+      return execViewTodo(userId, toolInput as { number: number });
     case "list_projects":
       return execListProjects(userId);
     case "add_project":

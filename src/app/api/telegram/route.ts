@@ -49,7 +49,9 @@ const HELP_SECTIONS: Record<string, string> = {
 • /del 번호 - 할일 삭제
 
 번호는 /list 결과의 번호를 사용합니다.
-프로젝트별 번호도 지원: /done mosun 2`,
+프로젝트별 번호도 지원: /done mosun 2
+
+💡 줄바꿈(Shift+Enter) 이후는 메모로 저장됩니다.`,
 
   "help:project": `📁 프로젝트 관리
 
@@ -73,6 +75,7 @@ API Key를 등록하면 자연어로 할일을 관리할 수 있어요.
 
 /add 이미지 버그 수정 #mosun
 /add 회의 자료 정리
+줄바꿈 이후는 메모로 저장
 /list
 /list mosun
 /done 1

@@ -19,7 +19,7 @@ export async function handleCommand(
   try {
     switch (command) {
       case "/add":
-        return await cmdAdd(args, userId);
+        return await cmdAdd(args, userId, text);
       case "/list":
         return await cmdList(args, userId);
       case "/done":
@@ -116,19 +116,25 @@ async function getGroupedPendingTodos(userId: string) {
 
 // --- Command handlers ---
 
-async function cmdAdd(args: string[], userId: string): Promise<string> {
+async function cmdAdd(args: string[], userId: string, rawText: string): Promise<string> {
   if (args.length === 0) {
-    return "사용법: /add 할일 내용 #프로젝트";
+    return "사용법: /add 할일 내용 #프로젝트\n\n줄바꿈 이후는 메모로 저장됩니다.";
   }
+
+  // Split by newline: first line = title + project, rest = memo
+  const commandRemoved = rawText.replace(/^\/add(@\S+)?\s*/, "");
+  const lines = commandRemoved.split("\n");
+  const firstLine = lines[0].trim();
+  const memo = lines.slice(1).join("\n").trim() || null;
 
   let projectSlug: string | null = null;
   const titleParts: string[] = [];
 
-  for (const arg of args) {
-    if (arg.startsWith("#") && arg.length > 1) {
-      projectSlug = arg.slice(1).toLowerCase();
+  for (const word of firstLine.split(/\s+/)) {
+    if (word.startsWith("#") && word.length > 1) {
+      projectSlug = word.slice(1).toLowerCase();
     } else {
-      titleParts.push(arg);
+      titleParts.push(word);
     }
   }
 
@@ -153,12 +159,14 @@ async function cmdAdd(args: string[], userId: string): Promise<string> {
     userId,
     content: title,
     title,
+    memo,
     projectId,
     source: "telegram",
   });
 
   const label = projectDisplay ? ` [${projectDisplay}]` : "";
-  return `✅ ${title}${label}`;
+  const memoStr = memo ? `\n📝 ${memo}` : "";
+  return `✅ ${title}${label}${memoStr}`;
 }
 
 async function cmdList(args: string[], userId: string): Promise<string> {
@@ -418,7 +426,7 @@ function cmdHelp(): string {
   return `📌 Clauvis 명령어
 
 [할일 관리]
-• /add 할일 내용 #프로젝트 - 할일 추가
+• /add 할일 내용 #프로젝트 - 할일 추가 (줄바꿈 후 메모)
 • /list [프로젝트] - 할일 목록
 • /done 번호 - 할일 완료
 • /del 번호 - 할일 삭제

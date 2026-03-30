@@ -32,7 +32,7 @@ export default function Image() {
               width: "48px",
               height: "48px",
               borderRadius: "10px",
-              backgroundColor: "#e2a832",
+              backgroundColor: "#a78bfa",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -46,7 +46,7 @@ export default function Image() {
           <span
             style={{
               fontSize: "24px",
-              color: "#e2a832",
+              color: "#a78bfa",
               letterSpacing: "0.1em",
             }}
           >
@@ -85,7 +85,7 @@ export default function Image() {
               style={{
                 fontSize: "56px",
                 fontWeight: 400,
-                color: "#e2a832",
+                color: "#a78bfa",
                 lineHeight: 1.2,
               }}
             >

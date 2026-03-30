@@ -14,11 +14,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Clauvis — Todo manager for developers",
-  description: "AI-powered personal todo manager. Capture tasks in Telegram, see them in Claude Code, manage across projects with natural language.",
+  description: "Open source todo manager for developers. Telegram bot + Claude Code MCP. Free command mode, BYOK agent mode.",
   metadataBase: new URL("https://clauvis.backproach.dev"),
   openGraph: {
     title: "Clauvis — Your todos, where you actually work.",
-    description: "AI-powered todo manager for developers. Telegram bot + Claude Code MCP integration.",
+    description: "Open source todo manager for developers. Telegram bot + Claude Code MCP. Free command mode, BYOK agent mode.",
     url: "https://clauvis.backproach.dev",
     siteName: "Clauvis",
     type: "website",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Clauvis — Todo manager for developers",
-    description: "Capture tasks in Telegram. See them in Claude Code. No context switching.",
+    description: "Open source todo manager for developers. Telegram bot + Claude Code MCP.",
   },
   robots: {
     index: true,

@@ -1,10 +1,15 @@
 import { ImageResponse } from "next/og";
+import { readFile } from "fs/promises";
+import { join } from "path";
 
 export const alt = "Clauvis — Todo manager for developers";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default function Image() {
+export default async function Image() {
+  const mascotData = await readFile(join(process.cwd(), "public", "mascot.png"));
+  const mascotBase64 = `data:image/png;base64,${mascotData.toString("base64")}`;
+
   return new ImageResponse(
     (
       <div
@@ -27,22 +32,12 @@ export default function Image() {
             marginBottom: "40px",
           }}
         >
-          <div
-            style={{
-              width: "48px",
-              height: "48px",
-              borderRadius: "10px",
-              backgroundColor: "#a78bfa",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "28px",
-              fontWeight: "bold",
-              color: "#0c0c0c",
-            }}
-          >
-            C
-          </div>
+          <img
+            src={mascotBase64}
+            width={56}
+            height={56}
+            style={{ borderRadius: "10px" }}
+          />
           <span
             style={{
               fontSize: "24px",

@@ -115,7 +115,10 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
       {/* Nav */}
       <nav className="fixed top-0 w-full z-50 border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <span className="font-mono text-sm tracking-wider text-accent">clauvis</span>
+          <span className="flex items-center gap-2 font-mono text-sm tracking-wider text-accent">
+              <img src="/mascot.svg" alt="" className="w-6 h-6" />
+              Clauvis
+            </span>
           <div className="flex items-center gap-6">
             <a href="#install" className="text-sm text-muted hover:text-foreground transition-colors">{t.install}</a>
             <a href={`/${otherLocale}`} className="text-sm text-muted hover:text-foreground transition-colors font-mono">
@@ -174,8 +177,8 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
             {/* Telegram mockup */}
             <div className="bg-surface rounded-xl border border-border overflow-hidden card-glow transition-all duration-300">
               <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-accent" />
-                <span className="text-xs text-muted font-mono">Telegram</span>
+                <img src="/mascot.svg" alt="" className="w-5 h-5 rounded-full" />
+                <span className="text-xs text-muted font-mono">Clauvis Bot</span>
               </div>
               <div className="p-5 space-y-3 font-mono text-sm">
                 <Bubble side="right" text={t.demoRight1} />
@@ -326,7 +329,10 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
       <footer className="py-16 px-6 border-t border-border">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="font-mono text-sm text-accent">clauvis</span>
+            <span className="flex items-center gap-2 font-mono text-sm text-accent">
+              <img src="/mascot.svg" alt="" className="w-5 h-5" />
+              Clauvis
+            </span>
             <span className="text-xs text-muted font-mono">Open Source &middot; MIT License</span>
           </div>
           <div className="flex items-center gap-6 text-xs text-muted">
@@ -342,9 +348,12 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
 
 function Bubble({ side, text }: { side: "left" | "right"; text: string }) {
   return (
-    <div className={`flex ${side === "right" ? "justify-end" : "justify-start"}`}>
+    <div className={`flex ${side === "right" ? "justify-end" : "justify-start"} items-end gap-2`}>
+      {side === "left" && (
+        <img src="/mascot.svg" alt="" className="w-6 h-6 rounded-full flex-shrink-0" />
+      )}
       <div
-        className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-line text-xs leading-relaxed ${
+        className={`max-w-[80%] px-3 py-2 rounded-lg whitespace-pre-line text-xs leading-relaxed ${
           side === "right"
             ? "bg-accent/12 text-foreground rounded-br-sm"
             : "bg-surface-2 text-foreground rounded-bl-sm"

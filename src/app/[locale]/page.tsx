@@ -296,6 +296,11 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
                 <CopyButton text={SETUP_CMD} />
               </div>
               <p className="text-muted text-xs mt-3">{t.step2Note}</p>
+              <p className="text-muted text-xs mt-2">
+                {locale === "ko"
+                  ? "Windows: WSL 터미널에서 실행하세요."
+                  : "Windows: Run inside a WSL terminal."}
+              </p>
             </Step>
             <Step n="3" title={t.step3Title}>
               <p className="text-muted text-sm">{t.step3Desc}</p>

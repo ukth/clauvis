@@ -38,6 +38,16 @@ This installs:
 - Session start hook (automatically shows your todos)
 - Clauvis skill (Claude knows when and how to use todo tools)
 
+### Windows
+
+On Windows, use [WSL (Windows Subsystem for Linux)](https://learn.microsoft.com/en-us/windows/wsl/install):
+
+```powershell
+wsl --install
+```
+
+After WSL is set up, run the same setup command inside your WSL terminal.
+
 ### 3. Register your projects
 
 The setup script will ask for project directories. Point it to your workspace and it auto-detects git repos.

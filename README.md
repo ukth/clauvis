@@ -1,19 +1,25 @@
 # Clauvis
 
-AI-powered personal todo manager that lives where you work — Telegram, Claude Code, and the web.
+Open source todo manager for developers — Telegram bot + Claude Code MCP integration.
 
 ## What is Clauvis?
 
-Clauvis is a todo management service designed for developers who juggle multiple projects. Instead of switching between apps, you manage everything through natural language — in Telegram or directly inside Claude Code via MCP.
+Clauvis is a todo manager designed for developers who juggle multiple projects. Manage everything through Telegram or directly inside Claude Code via MCP — no context switching.
+
+**Two modes:**
+
+- **Command mode** (free) — Slash commands like `/add`, `/list`, `/done`. No API key needed.
+- **Agent mode** (BYOK) — Register your own Anthropic API key for natural language interaction. Choose between Haiku, Sonnet, or Opus.
 
 **Key features:**
 
-- **Natural language input** — Just type "fix image bug in mosun" and the AI figures out the project, title, and priority
 - **Telegram bot** — Add, list, complete, and delete todos from your phone
-- **Claude Code MCP integration** — Your todos show up automatically when you start a coding session, filtered by the current project
+- **Claude Code MCP** — Your todos show up automatically when you start coding, filtered by the current project
+- **Natural language** — In agent mode, just type "fix image bug in my-app" and AI parses project, title, and priority
 - **Multi-project** — Organize todos by project with automatic directory-based matching
-- **Conversational** — The bot remembers context, so "mark #2 as done" just works
+- **Stable numbering** — Each todo gets a permanent `#number` that never changes
 - **Multi-user** — Each user gets their own API key and isolated data
+- **Self-hostable** — Deploy on your own infrastructure with zero cost
 
 ## Quick Start
 
@@ -38,13 +44,40 @@ The setup script will ask for project directories. Point it to your workspace an
 
 When you open Claude Code in a registered project directory, only that project's todos are shown.
 
+### 4. (Optional) Enable agent mode
+
+Register your Anthropic API key in Telegram:
+
+```
+/setkey sk-ant-...
+```
+
+Now you can manage todos with natural language. Choose your model with `/model haiku|sonnet|opus`.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/add content #project` | Add a todo (newline for memo) |
+| `/list [project]` | List todos |
+| `/view number` | View todo detail |
+| `/done number` | Complete a todo |
+| `/del number` | Delete a todo |
+| `/newproject slug [name]` | Create a project |
+| `/projects` | List projects |
+| `/delproject slug` | Delete a project |
+| `/setkey sk-ant-...` | Register API key (enables agent mode) |
+| `/delkey` | Remove API key |
+| `/model haiku\|sonnet\|opus` | Change AI model |
+| `/help` | Show commands |
+
 ## Architecture
 
 ```
 Telegram Bot  ←→  Next.js API (Vercel)  ←→  PostgreSQL (Neon)
 Claude Code   ←→  MCP Server            ←→       ↑
                        ↓
-                  Claude Sonnet (AI agent with tool-use loop)
+                  Claude (BYOK — user's own API key)
 ```
 
 ## Tech Stack
@@ -53,6 +86,7 @@ Claude Code   ←→  MCP Server            ←→       ↑
 - **Database**: PostgreSQL (Neon) + Drizzle ORM
 - **AI**: Claude (BYOK — user selects haiku/sonnet/opus)
 - **Messaging**: Telegram Bot API
+- **Encryption**: AES-256-GCM (API key storage)
 - **Deployment**: Vercel
 - **Integration**: MCP (Model Context Protocol) for Claude Code
 
@@ -88,6 +122,11 @@ ADMIN_SECRET_KEY=<random secret for user creation API>
 Generate `ENCRYPTION_KEY` with:
 ```bash
 openssl rand -hex 32
+```
+
+Generate `TELEGRAM_WEBHOOK_SECRET` with:
+```bash
+openssl rand -hex 16
 ```
 
 > Note: `ANTHROPIC_API_KEY` is not needed. All LLM calls use the user's own key (BYOK).

@@ -1,11 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./db";
-import { todos, projects, users, chatMessages } from "./db/schema";
-import { eq, and, desc } from "drizzle-orm";
-import { getNextTodoNumber } from "./db/utils";
+import { todos, projects, users, chatMessages, ideas } from "./db/schema";
+import { eq, and, desc, isNull } from "drizzle-orm";
+import { getNextTodoNumber, getNextIdeaNumber } from "./db/utils";
 import { esc } from "./telegram";
 
-const SYSTEM_PROMPT = `You are Clauvis, a todo management assistant. Use the appropriate tools based on the user's message, or respond directly for casual conversation.
+const SYSTEM_PROMPT = `You are Clauvis, a todo and idea management assistant. Use the appropriate tools based on the user's message, or respond directly for casual conversation.
 
 Rules:
 - Always respond in the user's language
@@ -19,7 +19,14 @@ Rules:
 - For casual conversation, greetings, or questions, respond directly without tools
 - When relaying tool results to the user, reflect them accurately. Do not fabricate or modify content
 - Do not change the count, names, or content of tool result items
-- Format responses in Telegram Markdown: *bold*, _italic_, \`code\`. No special escaping needed.`;
+- Format responses in Telegram Markdown: *bold*, _italic_, \`code\`. No special escaping needed.
+
+Todo vs Idea:
+- Todo: actionable tasks that need to be done (e.g. "fix bug", "add feature", "deploy")
+- Idea: thoughts, inspirations, references, or not-yet-concrete plans (e.g. "maybe add dark mode", "look into X", "interesting approach for Y")
+- When ambiguous, ask the user: "할일로 추가할까요, 아이디어로 메모할까요?"
+- Keywords suggesting idea: "아이디어", "메모", "나중에 참고", "생각인데", "영감", "maybe", "idea"
+- Keywords suggesting todo: "해야", "수정", "추가해줘", "고쳐", "fix", "add", "implement"`;
 
 const toolDefinitions: Anthropic.Tool[] = [
   {
@@ -182,6 +189,57 @@ const toolDefinitions: Anthropic.Tool[] = [
         slug: { type: "string", description: "Slug of the project to delete" },
       },
       required: ["slug"],
+    },
+  },
+  {
+    name: "add_idea",
+    description: "Save an idea or memo. For thoughts, inspirations, references — not actionable tasks.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        title: { type: "string", description: "Idea title (cleaned up)" },
+        body: { type: "string", description: "Detailed description or notes" },
+        project_slug: { type: "string", description: "Project slug" },
+        tags: { type: "array", items: { type: "string" }, description: "Tags for categorization" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "list_ideas",
+    description: "List saved ideas, optionally filtered by project.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        project_slug: { type: "string", description: "Filter by project slug" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "delete_idea",
+    description: "Delete an idea by number or keyword.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        number: { type: "number", description: "Idea number" },
+        keyword: { type: "string", description: "Keyword in idea title" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "convert_idea_to_todo",
+    description: "Convert an idea into a todo. The idea gets archived.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        number: { type: "number", description: "Idea number" },
+        keyword: { type: "string", description: "Keyword in idea title" },
+        priority: { type: "string", enum: ["urgent", "normal", "low"], description: "Priority for the new todo" },
+        deadline: { type: "string", description: "Deadline for the new todo (YYYY-MM-DD)" },
+      },
+      required: [],
     },
   },
 ];
@@ -513,6 +571,169 @@ async function execDeleteProject(
   return `Project deleted: ${target.name || target.slug}`;
 }
 
+// --- Idea execution functions ---
+
+async function execAddIdea(
+  userId: string,
+  input: { title: string; body?: string; project_slug?: string; tags?: string[] }
+): Promise<string> {
+  let projectId: string | null = null;
+  let projectDisplayName: string | null = null;
+
+  if (input.project_slug) {
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(and(eq(projects.slug, input.project_slug), eq(projects.userId, userId)))
+      .limit(1);
+    if (project) {
+      projectId = project.id;
+      projectDisplayName = project.name || project.slug;
+    }
+  }
+
+  const number = await getNextIdeaNumber(userId);
+  await db.insert(ideas).values({
+    userId,
+    number,
+    content: input.title,
+    title: input.title,
+    body: input.body || null,
+    projectId,
+    tags: input.tags || [],
+    source: "telegram",
+  });
+
+  const projectLabel = projectDisplayName
+    ? `${projectDisplayName}[${input.project_slug}]`
+    : input.project_slug || "Uncategorized";
+  const bodyStr = input.body ? `\nbody: ${input.body}` : "";
+  return `Idea saved: [${projectLabel}] ${input.title}${bodyStr}`;
+}
+
+async function execListIdeas(
+  userId: string,
+  input: { project_slug?: string }
+): Promise<string> {
+  const conditions = [eq(ideas.userId, userId), isNull(ideas.archivedAt)];
+
+  if (input.project_slug) {
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(and(eq(projects.slug, input.project_slug), eq(projects.userId, userId)))
+      .limit(1);
+    if (project) {
+      conditions.push(eq(ideas.projectId, project.id));
+    }
+  }
+
+  const result = await db
+    .select({
+      number: ideas.number,
+      title: ideas.title,
+      projectName: projects.name,
+      projectSlug: projects.slug,
+    })
+    .from(ideas)
+    .leftJoin(projects, eq(ideas.projectId, projects.id))
+    .where(and(...conditions))
+    .orderBy(desc(ideas.createdAt));
+
+  if (result.length === 0) {
+    return "No ideas.";
+  }
+
+  const grouped: Record<string, { display: string; items: typeof result }> = {};
+  for (const idea of result) {
+    const slug = idea.projectSlug || "Uncategorized";
+    const display = idea.projectName ? `${idea.projectName}[${slug}]` : slug;
+    if (!grouped[slug]) grouped[slug] = { display, items: [] };
+    grouped[slug].items.push(idea);
+  }
+
+  let message = `${result.length} ideas:\n`;
+  for (const [, group] of Object.entries(grouped)) {
+    message += `\n[${group.display}]\n`;
+    for (const item of group.items) {
+      message += `#${item.number}. ${item.title}\n`;
+    }
+  }
+
+  return message;
+}
+
+async function execDeleteIdea(
+  userId: string,
+  input: { number?: number; keyword?: string }
+): Promise<string> {
+  const activeIdeas = await db
+    .select({ id: ideas.id, number: ideas.number, title: ideas.title })
+    .from(ideas)
+    .where(and(eq(ideas.userId, userId), isNull(ideas.archivedAt)))
+    .orderBy(desc(ideas.createdAt));
+
+  let matched;
+  if (input.number != null) {
+    matched = activeIdeas.find((i) => i.number === input.number);
+  } else if (input.keyword) {
+    matched = activeIdeas.find((i) =>
+      i.title.toLowerCase().includes(input.keyword!.toLowerCase())
+    );
+  }
+
+  if (!matched) {
+    return "Idea not found.";
+  }
+
+  await db.delete(ideas).where(eq(ideas.id, matched.id));
+  return `Deleted idea: ${matched.title}`;
+}
+
+async function execConvertIdeaToTodo(
+  userId: string,
+  input: { number?: number; keyword?: string; priority?: string; deadline?: string }
+): Promise<string> {
+  const activeIdeas = await db
+    .select()
+    .from(ideas)
+    .where(and(eq(ideas.userId, userId), isNull(ideas.archivedAt)))
+    .orderBy(desc(ideas.createdAt));
+
+  let matched;
+  if (input.number != null) {
+    matched = activeIdeas.find((i) => i.number === input.number);
+  } else if (input.keyword) {
+    matched = activeIdeas.find((i) =>
+      i.title.toLowerCase().includes(input.keyword!.toLowerCase())
+    );
+  }
+
+  if (!matched) {
+    return "Idea not found.";
+  }
+
+  const todoNumber = await getNextTodoNumber(userId);
+  await db.insert(todos).values({
+    userId,
+    number: todoNumber,
+    content: matched.content,
+    title: matched.title,
+    memo: matched.body || null,
+    projectId: matched.projectId,
+    priority: (input.priority as "urgent" | "normal" | "low") || "normal",
+    deadline: input.deadline ? new Date(input.deadline) : null,
+    source: matched.source,
+  });
+
+  await db
+    .update(ideas)
+    .set({ archivedAt: new Date() })
+    .where(eq(ideas.id, matched.id));
+
+  return `Converted idea to todo: #${todoNumber} ${matched.title}`;
+}
+
 // --- Tool dispatcher ---
 
 async function executeTool(
@@ -551,6 +772,18 @@ async function executeTool(
       });
     case "delete_project":
       return execDeleteProject(userId, toolInput as { slug: string });
+    case "add_idea":
+      return execAddIdea(userId, toolInput as {
+        title: string; body?: string; project_slug?: string; tags?: string[];
+      });
+    case "list_ideas":
+      return execListIdeas(userId, toolInput as { project_slug?: string });
+    case "delete_idea":
+      return execDeleteIdea(userId, toolInput as { number?: number; keyword?: string });
+    case "convert_idea_to_todo":
+      return execConvertIdeaToTodo(userId, toolInput as {
+        number?: number; keyword?: string; priority?: string; deadline?: string;
+      });
     default:
       return `Unknown tool: ${toolName}`;
   }

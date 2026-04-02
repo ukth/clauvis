@@ -47,6 +47,22 @@ export const todos = pgTable("todos", {
   completedAt: timestamp("completed_at"),
 });
 
+export const ideas = pgTable("ideas", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull(),
+  number: integer("number").notNull(),
+  content: text("content").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  tags: text("tags").array().notNull().default([]),
+  source: sourceEnum("source").notNull().default("web"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  archivedAt: timestamp("archived_at"),
+});
+
 export const chatMessages = pgTable("chat_messages", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")

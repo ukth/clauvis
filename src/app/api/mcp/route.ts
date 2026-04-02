@@ -2,9 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { todos, projects, users } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
-import { getNextTodoNumber } from "@/lib/db/utils";
+import { todos, projects, users, ideas } from "@/lib/db/schema";
+import { eq, and, desc, isNull } from "drizzle-orm";
+import { getNextTodoNumber, getNextIdeaNumber } from "@/lib/db/utils";
 
 function createServer(userId: string) {
   const server = new McpServer(
@@ -430,6 +430,213 @@ function createServer(userId: string) {
         content: [
           { type: "text" as const, text: `🗑 Project ${target.name || target.slug} deleted.` },
         ],
+      };
+    }
+  );
+
+  // --- Idea tools ---
+
+  server.registerTool(
+    "list_ideas",
+    {
+      title: "List Ideas",
+      description: "List saved ideas, optionally filtered by project.",
+      inputSchema: {
+        project: z.string().optional().describe("Filter by project slug"),
+      },
+    },
+    async ({ project }) => {
+      const conditions = [eq(ideas.userId, userId), isNull(ideas.archivedAt)];
+
+      if (project) {
+        const proj = await db
+          .select()
+          .from(projects)
+          .where(and(eq(projects.slug, project), eq(projects.userId, userId)))
+          .limit(1);
+        if (proj.length > 0) {
+          conditions.push(eq(ideas.projectId, proj[0].id));
+        }
+      }
+
+      const result = await db
+        .select({
+          number: ideas.number,
+          title: ideas.title,
+          body: ideas.body,
+          tags: ideas.tags,
+          projectSlug: projects.slug,
+          projectName: projects.name,
+        })
+        .from(ideas)
+        .leftJoin(projects, eq(ideas.projectId, projects.id))
+        .where(and(...conditions))
+        .orderBy(desc(ideas.createdAt));
+
+      if (result.length === 0) {
+        return { content: [{ type: "text" as const, text: "No ideas." }] };
+      }
+
+      const text = result
+        .map((i) => {
+          const proj = (i.projectName || i.projectSlug) ? `[${i.projectName || i.projectSlug}] ` : "";
+          const body = i.body ? ` — ${i.body.slice(0, 80)}` : "";
+          return `#${i.number}. ${proj}${i.title}${body}`;
+        })
+        .join("\n");
+
+      return {
+        content: [{ type: "text" as const, text: `${result.length} ideas:\n${text}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "add_idea",
+    {
+      title: "Add Idea",
+      description: "Save an idea or memo. For thoughts, inspirations, references — not actionable tasks.",
+      inputSchema: {
+        title: z.string().describe("Idea title"),
+        body: z.string().optional().describe("Detailed description or notes"),
+        project: z.string().optional().describe("Project slug"),
+        tags: z.array(z.string()).optional().describe("Tags"),
+      },
+    },
+    async ({ title, body, project, tags }) => {
+      let projectId: string | null = null;
+      let projectLabel = "Uncategorized";
+
+      if (project) {
+        const proj = await db
+          .select()
+          .from(projects)
+          .where(and(eq(projects.slug, project), eq(projects.userId, userId)))
+          .limit(1);
+        if (proj.length > 0) {
+          projectId = proj[0].id;
+          projectLabel = proj[0].name || proj[0].slug;
+        }
+      }
+
+      const [newIdea] = await db
+        .insert(ideas)
+        .values({
+          userId,
+          number: await getNextIdeaNumber(userId),
+          content: title,
+          title,
+          body: body ?? null,
+          projectId,
+          tags: tags ?? [],
+          source: "mcp",
+        })
+        .returning();
+
+      return {
+        content: [{ type: "text" as const, text: `💡 Idea saved: ${projectLabel} > ${newIdea.title}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "delete_idea",
+    {
+      title: "Delete Idea",
+      description: "Delete an idea by #number or title keyword.",
+      inputSchema: {
+        target: z.string().describe("Idea #number or title keyword"),
+      },
+    },
+    async ({ target }) => {
+      const num = parseInt(target);
+      let matched;
+
+      if (!isNaN(num)) {
+        const [idea] = await db
+          .select({ id: ideas.id, title: ideas.title })
+          .from(ideas)
+          .where(and(eq(ideas.userId, userId), eq(ideas.number, num)))
+          .limit(1);
+        matched = idea;
+      } else {
+        const activeIdeas = await db
+          .select({ id: ideas.id, title: ideas.title })
+          .from(ideas)
+          .where(and(eq(ideas.userId, userId), isNull(ideas.archivedAt)));
+        matched = activeIdeas.find((i) =>
+          i.title.toLowerCase().includes(target.toLowerCase())
+        );
+      }
+
+      if (!matched) {
+        return { content: [{ type: "text" as const, text: `Idea "${target}" not found.` }] };
+      }
+
+      await db.delete(ideas).where(eq(ideas.id, matched.id));
+
+      return {
+        content: [{ type: "text" as const, text: `🗑 ${matched.title} deleted.` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "convert_idea_to_todo",
+    {
+      title: "Convert Idea to Todo",
+      description: "Convert an idea into an actionable todo. The original idea gets archived.",
+      inputSchema: {
+        target: z.string().describe("Idea #number or title keyword"),
+        priority: z.enum(["urgent", "normal", "low"]).optional().describe("Priority for the new todo"),
+        deadline: z.string().optional().describe("Deadline (YYYY-MM-DD)"),
+      },
+    },
+    async ({ target, priority, deadline }) => {
+      const num = parseInt(target);
+      let matched;
+
+      if (!isNaN(num)) {
+        const [idea] = await db
+          .select()
+          .from(ideas)
+          .where(and(eq(ideas.userId, userId), eq(ideas.number, num)))
+          .limit(1);
+        matched = idea;
+      } else {
+        const activeIdeas = await db
+          .select()
+          .from(ideas)
+          .where(and(eq(ideas.userId, userId), isNull(ideas.archivedAt)));
+        matched = activeIdeas.find((i) =>
+          i.title.toLowerCase().includes(target.toLowerCase())
+        );
+      }
+
+      if (!matched) {
+        return { content: [{ type: "text" as const, text: `Idea "${target}" not found.` }] };
+      }
+
+      const todoNumber = await getNextTodoNumber(userId);
+      await db.insert(todos).values({
+        userId,
+        number: todoNumber,
+        content: matched.content,
+        title: matched.title,
+        memo: matched.body || null,
+        projectId: matched.projectId,
+        priority: priority ?? "normal",
+        deadline: deadline ? new Date(deadline) : null,
+        source: matched.source,
+      });
+
+      await db
+        .update(ideas)
+        .set({ archivedAt: new Date() })
+        .where(eq(ideas.id, matched.id));
+
+      return {
+        content: [{ type: "text" as const, text: `✅ Idea → Todo: #${todoNumber} ${matched.title}` }],
       };
     }
   );

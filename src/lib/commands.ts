@@ -1,7 +1,7 @@
 import { db } from "./db";
-import { todos, projects, users } from "./db/schema";
-import { eq, and, desc } from "drizzle-orm";
-import { getNextTodoNumber } from "./db/utils";
+import { todos, projects, users, ideas } from "./db/schema";
+import { eq, and, desc, isNull } from "drizzle-orm";
+import { getNextTodoNumber, getNextIdeaNumber } from "./db/utils";
 
 const VALID_MODELS = ["haiku", "sonnet", "opus"] as const;
 
@@ -45,6 +45,16 @@ export async function handleCommand(
         return "Usage: /setkey sk-ant-...\n\nGet your key at console.anthropic.com";
       case "/delkey":
         return "Usage: /delkey\n\nRemoves your API Key and switches to command mode.";
+      case "/idea":
+        return await cmdAddIdea(args, userId, text);
+      case "/ideas":
+        return await cmdListIdeas(args, userId);
+      case "/viewidea":
+        return await cmdViewIdea(args, userId);
+      case "/delidea":
+        return await cmdDelIdea(args, userId);
+      case "/idea2todo":
+        return await cmdIdeaToTodo(args, userId);
       case "/help":
         return cmdHelp();
       default:
@@ -408,6 +418,221 @@ async function cmdModel(args: string[], userId: string): Promise<string> {
   return `🤖 Model changed: ${model}`;
 }
 
+// --- Idea command handlers ---
+
+async function findIdeaByNumber(userId: string, num: number) {
+  const [idea] = await db
+    .select({
+      id: ideas.id,
+      number: ideas.number,
+      title: ideas.title,
+      body: ideas.body,
+      tags: ideas.tags,
+      source: ideas.source,
+      projectId: ideas.projectId,
+      projectName: projects.name,
+      projectSlug: projects.slug,
+      createdAt: ideas.createdAt,
+      archivedAt: ideas.archivedAt,
+    })
+    .from(ideas)
+    .leftJoin(projects, eq(ideas.projectId, projects.id))
+    .where(and(eq(ideas.userId, userId), eq(ideas.number, num)))
+    .limit(1);
+  return idea || null;
+}
+
+async function cmdAddIdea(args: string[], userId: string, rawText: string): Promise<string> {
+  if (args.length === 0) {
+    return "Usage: /idea content #project\n\nLines after the first become the body.";
+  }
+
+  const commandRemoved = rawText.replace(/^\/idea(@\S+)?\s*/, "");
+  const lines = commandRemoved.split("\n");
+  const firstLine = lines[0].trim();
+  const body = lines.slice(1).join("\n").trim() || null;
+
+  let projectSlug: string | null = null;
+  const titleParts: string[] = [];
+  const tags: string[] = [];
+
+  for (const word of firstLine.split(/\s+/)) {
+    if (word.startsWith("#") && word.length > 1) {
+      projectSlug = word.slice(1).toLowerCase();
+    } else {
+      titleParts.push(word);
+    }
+  }
+
+  const title = titleParts.join(" ");
+  if (!title) {
+    return "Please enter idea content.";
+  }
+
+  let projectId: string | null = null;
+  let projectDisplay: string | null = null;
+
+  if (projectSlug) {
+    const project = await findProject(userId, projectSlug);
+    if (!project) {
+      return `Project "${projectSlug}" not found. Check /projects for the list.`;
+    }
+    projectId = project.id;
+    projectDisplay = project.name || project.slug;
+  }
+
+  const number = await getNextIdeaNumber(userId);
+
+  await db.insert(ideas).values({
+    userId,
+    number,
+    content: title,
+    title,
+    body,
+    projectId,
+    tags,
+    source: "telegram",
+  });
+
+  const label = projectDisplay ? ` <b>[${h(projectDisplay)}]</b>` : "";
+  const bodyStr = body ? `\n💭 ${h(body)}` : "";
+  return `💡 <b>#${number}</b> ${h(title)}${label}${bodyStr}`;
+}
+
+async function cmdListIdeas(args: string[], userId: string): Promise<string> {
+  const projectSlug = args[0]?.toLowerCase();
+
+  const conditions = [eq(ideas.userId, userId), isNull(ideas.archivedAt)];
+
+  if (projectSlug) {
+    const project = await findProject(userId, projectSlug);
+    if (!project) {
+      return `Project "${projectSlug}" not found.`;
+    }
+    conditions.push(eq(ideas.projectId, project.id));
+  }
+
+  const result = await db
+    .select({
+      number: ideas.number,
+      title: ideas.title,
+      projectName: projects.name,
+      projectSlug: projects.slug,
+    })
+    .from(ideas)
+    .leftJoin(projects, eq(ideas.projectId, projects.id))
+    .where(and(...conditions))
+    .orderBy(desc(ideas.createdAt));
+
+  if (result.length === 0) {
+    const label = projectSlug ? `[${projectSlug}] ` : "";
+    return `${label}No ideas yet! 💡`;
+  }
+
+  const grouped = new Map<string, { display: string; items: typeof result }>();
+  for (const idea of result) {
+    const key = idea.projectSlug || "__none__";
+    const display = idea.projectName || idea.projectSlug || "Uncategorized";
+    if (!grouped.has(key)) grouped.set(key, { display, items: [] });
+    grouped.get(key)!.items.push(idea);
+  }
+
+  let msg = `💡 <b>${result.length} ideas</b>\n`;
+
+  for (const [, group] of grouped) {
+    msg += `\n<b>[${h(group.display)}]</b>\n`;
+    for (const item of group.items) {
+      msg += `<b>#${item.number}</b>. ${h(item.title)}\n`;
+    }
+  }
+
+  return msg;
+}
+
+async function cmdViewIdea(args: string[], userId: string): Promise<string> {
+  if (args.length === 0) {
+    return "Usage: /viewidea number";
+  }
+
+  const num = parseInt(args[0]);
+  if (isNaN(num)) {
+    return "Please enter a valid number.";
+  }
+
+  const idea = await findIdeaByNumber(userId, num);
+  if (!idea) {
+    return `Idea #${num} not found.`;
+  }
+
+  const project = idea.projectName || idea.projectSlug || "Uncategorized";
+  const body = idea.body ? `\n\n💭 ${idea.body}` : "";
+  const tags = idea.tags.length > 0 ? `\n<b>Tags:</b> ${idea.tags.map(t => h(t)).join(", ")}` : "";
+  const created = idea.createdAt.toISOString().split("T")[0];
+
+  return `💡 <b>#${num} ${h(idea.title)}</b>
+
+<b>Project:</b> ${h(project)}
+<b>Created:</b> ${created}
+<b>Source:</b> ${idea.source}${tags}${body}`;
+}
+
+async function cmdDelIdea(args: string[], userId: string): Promise<string> {
+  if (args.length === 0) {
+    return "Usage: /delidea number";
+  }
+
+  const num = parseInt(args[0]);
+  if (isNaN(num)) {
+    return "Please enter a valid number.";
+  }
+
+  const idea = await findIdeaByNumber(userId, num);
+  if (!idea) {
+    return `Idea #${num} not found.`;
+  }
+
+  await db.delete(ideas).where(eq(ideas.id, idea.id));
+
+  return `🗑 Deleted idea: <b>#${num}</b> ${h(idea.title)}`;
+}
+
+async function cmdIdeaToTodo(args: string[], userId: string): Promise<string> {
+  if (args.length === 0) {
+    return "Usage: /idea2todo number";
+  }
+
+  const num = parseInt(args[0]);
+  if (isNaN(num)) {
+    return "Please enter a valid number.";
+  }
+
+  const idea = await findIdeaByNumber(userId, num);
+  if (!idea) {
+    return `Idea #${num} not found.`;
+  }
+
+  const todoNumber = await getNextTodoNumber(userId);
+
+  await db.insert(todos).values({
+    userId,
+    number: todoNumber,
+    content: idea.title,
+    title: idea.title,
+    memo: idea.body || null,
+    projectId: idea.projectId,
+    source: idea.source,
+  });
+
+  // Archive the idea
+  await db
+    .update(ideas)
+    .set({ archivedAt: new Date() })
+    .where(eq(ideas.id, idea.id));
+
+  const label = idea.projectName ? ` <b>[${h(idea.projectName)}]</b>` : "";
+  return `✅ Idea → Todo: <b>#${todoNumber}</b> ${h(idea.title)}${label}`;
+}
+
 function cmdHelp(): string {
   return `📌 Clauvis Commands
 
@@ -417,6 +642,13 @@ function cmdHelp(): string {
 • /view number - View todo detail
 • /done number - Complete todo
 • /del number - Delete todo
+
+[Ideas]
+• /idea content #project - Save idea (newline for body)
+• /ideas [project] - List ideas
+• /viewidea number - View idea detail
+• /delidea number - Delete idea
+• /idea2todo number - Convert idea to todo
 
 [Projects]
 • /newproject slug [name] - Create project
@@ -430,7 +662,8 @@ function cmdHelp(): string {
 
 [Examples]
 /add fix image bug #mosun
+/idea add dark mode support #mosun
+/idea2todo 3
 /list mosun
-/view 42
 /done 42`;
 }

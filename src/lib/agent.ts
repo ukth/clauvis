@@ -858,7 +858,7 @@ ${projectContext || "None"}`;
   const messages: Anthropic.MessageParam[] = [
     ...history.map((m) => ({
       role: m.role as "user" | "assistant",
-      content: m.content,
+      content: m.role === "user" ? `[Previous message — for context only] ${m.content}` : m.content,
     })),
     { role: "user", content: userMessage },
   ];

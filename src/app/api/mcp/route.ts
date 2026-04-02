@@ -150,11 +150,11 @@ function createServer(userId: string) {
     "complete_todo",
     {
       title: "Complete Todo",
-      description: "Mark a todo as done. Specify by #number or title keyword.",
+      description: "Mark a todo as done. Specify by number or title keyword.",
       inputSchema: {
         target: z
           .string()
-          .describe("Todo #number or title keyword"),
+          .describe("Todo number or title keyword"),
       },
     },
     async ({ target }) => {
@@ -209,9 +209,9 @@ function createServer(userId: string) {
     "delete_todo",
     {
       title: "Delete Todo",
-      description: "Delete a todo. Specify by #number or title keyword.",
+      description: "Delete a todo. Specify by number or title keyword.",
       inputSchema: {
-        target: z.string().describe("Todo #number or title keyword"),
+        target: z.string().describe("Todo number or title keyword"),
       },
     },
     async ({ target }) => {
@@ -259,7 +259,7 @@ function createServer(userId: string) {
       title: "Update Todo",
       description: "Update a todo's title, memo, priority, or deadline.",
       inputSchema: {
-        target: z.string().describe("Todo #number or title keyword"),
+        target: z.string().describe("Todo number or title keyword"),
         title: z.string().optional().describe("New title"),
         memo: z.string().optional().describe("New memo"),
         priority: z.enum(["urgent", "normal", "low"]).optional().describe("New priority"),
@@ -543,9 +543,9 @@ function createServer(userId: string) {
     "delete_idea",
     {
       title: "Delete Idea",
-      description: "Delete an idea by #number or title keyword.",
+      description: "Delete an idea by number or title keyword.",
       inputSchema: {
-        target: z.string().describe("Idea #number or title keyword"),
+        target: z.string().describe("Idea number or title keyword"),
       },
     },
     async ({ target }) => {
@@ -587,7 +587,7 @@ function createServer(userId: string) {
       title: "Convert Idea to Todo",
       description: "Convert an idea into an actionable todo. The original idea gets archived.",
       inputSchema: {
-        target: z.string().describe("Idea #number or title keyword"),
+        target: z.string().describe("Idea number or title keyword"),
         priority: z.enum(["urgent", "normal", "low"]).optional().describe("Priority for the new todo"),
         deadline: z.string().optional().describe("Deadline (YYYY-MM-DD)"),
       },

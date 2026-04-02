@@ -175,7 +175,9 @@ echo "✓ Clauvis skill installed"
 
 # 6. Add minimal instructions to CLAUDE.md
 CLAUVIS_LINE="## Clauvis
-- Todos are auto-injected at session start. Summarize them for the user."
+- Todos are auto-injected at session start. Summarize them for the user.
+- After completing a milestone (commit, feature, bug fix), ask: \"Save a work log?\" If yes, use add_work_log MCP tool.
+- If the work relates to an existing todo, ask: \"Mark as done in Clauvis?\" If yes, use complete_todo MCP tool."
 
 if [ -f "$CLAUDE_MD" ]; then
   if ! grep -q "Clauvis" "$CLAUDE_MD"; then

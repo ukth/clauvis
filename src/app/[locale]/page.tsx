@@ -7,7 +7,6 @@ import {
   BoltIcon,
   LightBulbIcon,
   KeyIcon,
-  ClipboardDocumentListIcon,
 } from "@heroicons/react/24/outline";
 
 const dict = {
@@ -27,9 +26,8 @@ const dict = {
     feat2: { title: "Project-aware", desc: "Todos are grouped by project. Open a directory, see only what matters." },
     feat3: { title: "Telegram bot", desc: "Add todos from your phone at 2am. Check them on your commute." },
     feat4: { title: "Claude Code MCP", desc: "Todos show up when you start coding. Complete them when you're done." },
-    feat5: { title: "Ideas & Todos", desc: "Capture fleeting ideas separately from tasks. Convert them to todos when they're ready." },
-    feat6: { title: "Work Logs", desc: "Record what you did, not just what's left. Track progress per project, review past work anytime." },
-    feat7: { title: "Bring your own key", desc: "Free command mode for everyone. Register your API key to unlock AI agent mode." },
+    feat5: { title: "Capture everything", desc: "Todos, ideas, work logs. Capture tasks, save fleeting thoughts, and record what you did — all in one place." },
+    feat6: { title: "Bring your own key", desc: "Free command mode for everyone. Register your API key to unlock AI agent mode." },
     setup: "Get started",
     step1Title: "Get your API key",
     step1Desc: "on Telegram and send",
@@ -78,9 +76,8 @@ const dict = {
     feat2: { title: "프로젝트별 관리", desc: "할일은 프로젝트별로 그룹화됩니다. 디렉토리를 열면 해당 프로젝트의 할일만 보여요." },
     feat3: { title: "텔레그램 봇", desc: "새벽 2시에 떠오른 할일을 폰으로 바로 추가. 출퇴근길에 확인하세요." },
     feat4: { title: "Claude Code MCP", desc: "코딩을 시작하면 할일이 자동으로 표시됩니다. 끝나면 바로 완료 처리." },
-    feat5: { title: "아이디어 & 할일", desc: "떠오르는 아이디어를 할일과 분리해서 저장하세요. 구체화되면 할일로 전환." },
-    feat6: { title: "작업 로그", desc: "뭘 했는지 기록하세요. 프로젝트별 진행 상황을 추적하고, 언제든 돌아볼 수 있어요." },
-    feat7: { title: "나만의 API 키", desc: "명령어 모드는 무료. API 키를 등록하면 AI 에이전트 모드가 활성화됩니다." },
+    feat5: { title: "무엇이든 기록", desc: "할일, 아이디어, 작업 로그. 해야 할 일, 떠오른 생각, 작업 기록을 한 곳에서 관리하세요." },
+    feat6: { title: "나만의 API 키", desc: "명령어 모드는 무료. API 키를 등록하면 AI 에이전트 모드가 활성화됩니다." },
     setup: "시작하기",
     step1Title: "API 키 발급",
     step1Desc: "텔레그램에서 아래 봇에게",
@@ -278,8 +275,7 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
               { icon: DevicePhoneMobileIcon, ...t.feat3 },
               { icon: BoltIcon, ...t.feat4 },
               { icon: LightBulbIcon, ...t.feat5 },
-              { icon: ClipboardDocumentListIcon, ...t.feat6 },
-              { icon: KeyIcon, ...t.feat7 },
+              { icon: KeyIcon, ...t.feat6 },
             ].map((feat, i) => (
               <div key={i} className="bg-surface border border-border rounded-xl p-6 card-glow transition-all duration-300">
                 <feat.icon className="w-7 h-7 mb-4 text-accent" />

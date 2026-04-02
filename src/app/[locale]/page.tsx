@@ -26,7 +26,7 @@ const dict = {
     feat2: { title: "Project-aware", desc: "Todos are grouped by project. Open a directory, see only what matters." },
     feat3: { title: "Telegram bot", desc: "Add todos from your phone at 2am. Check them on your commute." },
     feat4: { title: "Claude Code MCP", desc: "Todos show up when you start coding. Complete them when you're done." },
-    feat5: { title: "Context memory", desc: "The bot remembers your conversation. 'mark 2 as done' just works." },
+    feat5: { title: "Ideas & Todos", desc: "Capture fleeting ideas separately from tasks. Convert them to todos when they're ready." },
     feat6: { title: "Bring your own key", desc: "Free command mode for everyone. Register your API key to unlock AI agent mode." },
     setup: "Get started",
     step1Title: "Get your API key",
@@ -36,15 +36,18 @@ const dict = {
     step3Title: "Start working",
     step3Desc: "Open Claude Code in any project directory. Your todos are already there.",
     demoRight1: "fix image upload bug in my-app",
-    demoLeft1: "[my-app] Fix image upload bug\nAdded!",
-    demoRight2: "show my todos",
-    demoLeft2: "[my-app]\n1. Fix image upload bug\n2. Add dark mode\n\n[backend]\n1. Optimize DB queries\n2. Add rate limiting",
-    demoRight3: "my-app 1 done",
-    demoLeft3: "Done: Fix image upload bug (3 remaining)",
+    demoLeft1: "✅ [my-app] Fix image upload bug\nAdded!",
+    demoRight2: "maybe try WebP conversion for uploads, just an idea",
+    demoLeft2: "💡 [my-app] Try WebP conversion for uploads\nSaved as idea!",
+    demoRight3: "show my todos",
+    demoLeft3: "[my-app]\n#1. Fix image upload bug\n#2. Add dark mode",
+    demoRight4: "actually let's do that WebP idea",
+    demoLeft4: "✅ Idea → Todo: #3 Try WebP conversion for uploads",
     terminalStart: "Session started",
     terminalTodos: "2 todos:",
-    terminalTodo1: "1. Add dark mode",
-    terminalTodo2: "2. Fix responsive layout",
+    terminalTodo1: "#1. Add dark mode",
+    terminalTodo2: "#3. Try WebP conversion for uploads",
+    terminalIdea: "💡 1 idea: Add haptic feedback on mobile",
     terminalYou1: "let's work on #1",
     terminalWorking: "Working on Add dark mode...",
     terminalDone: "... task complete ...",
@@ -68,7 +71,7 @@ const dict = {
     feat2: { title: "프로젝트별 관리", desc: "할일은 프로젝트별로 그룹화됩니다. 디렉토리를 열면 해당 프로젝트의 할일만 보여요." },
     feat3: { title: "텔레그램 봇", desc: "새벽 2시에 떠오른 할일을 폰으로 바로 추가. 출퇴근길에 확인하세요." },
     feat4: { title: "Claude Code MCP", desc: "코딩을 시작하면 할일이 자동으로 표시됩니다. 끝나면 바로 완료 처리." },
-    feat5: { title: "대화 기억", desc: "봇이 대화 맥락을 기억합니다. '2번 완료'만 말하면 됩니다." },
+    feat5: { title: "아이디어 & 할일", desc: "떠오르는 아이디어를 할일과 분리해서 저장하세요. 구체화되면 할일로 전환." },
     feat6: { title: "나만의 API 키", desc: "명령어 모드는 무료. API 키를 등록하면 AI 에이전트 모드가 활성화됩니다." },
     setup: "시작하기",
     step1Title: "API 키 발급",
@@ -78,15 +81,18 @@ const dict = {
     step3Title: "시작하세요",
     step3Desc: "아무 프로젝트 디렉토리에서 Claude Code를 열면 할일이 이미 표시됩니다.",
     demoRight1: "my-app 이미지 업로드 버그 수정해줘",
-    demoLeft1: "[my-app] 이미지 업로드 버그 수정\n추가했어요",
-    demoRight2: "할일 보여줘",
-    demoLeft2: "[my-app]\n1. 이미지 업로드 버그 수정\n2. 다크모드 추가\n\n[backend]\n1. DB 쿼리 최적화\n2. 속도 제한 추가",
-    demoRight3: "my-app 1번 완료",
-    demoLeft3: "완료: 이미지 업로드 버그 수정 (남은 할일 3개)",
+    demoLeft1: "✅ [my-app] 이미지 업로드 버그 수정\n추가했어요!",
+    demoRight2: "업로드할 때 WebP 변환도 넣으면 좋을듯, 메모해줘",
+    demoLeft2: "💡 [my-app] 업로드 시 WebP 변환 적용\n아이디어로 저장했어요!",
+    demoRight3: "할일 보여줘",
+    demoLeft3: "[my-app]\n#1. 이미지 업로드 버그 수정\n#2. 다크모드 추가",
+    demoRight4: "아 그 WebP 아이디어 할일로 옮겨줘",
+    demoLeft4: "✅ 아이디어 → 할일: #3 업로드 시 WebP 변환 적용",
     terminalStart: "세션 시작",
     terminalTodos: "할일 2개:",
-    terminalTodo1: "1. 다크모드 추가",
-    terminalTodo2: "2. 반응형 레이아웃 수정",
+    terminalTodo1: "#1. 다크모드 추가",
+    terminalTodo2: "#3. 업로드 시 WebP 변환 적용",
+    terminalIdea: "💡 아이디어 1개: 모바일 햅틱 피드백 추가",
     terminalYou1: "1번 작업하자",
     terminalWorking: "다크모드 추가 작업 중...",
     terminalDone: "... 작업 완료 ...",
@@ -187,6 +193,8 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
                 <Bubble side="left" text={t.demoLeft2} />
                 <Bubble side="right" text={t.demoRight3} />
                 <Bubble side="left" text={t.demoLeft3} />
+                <Bubble side="right" text={t.demoRight4} />
+                <Bubble side="left" text={t.demoLeft4} />
               </div>
             </div>
 
@@ -208,6 +216,7 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
                   <div className="text-foreground text-xs">{t.terminalTodos}</div>
                   <div className="text-muted text-xs mt-1">{t.terminalTodo1}</div>
                   <div className="text-muted text-xs">{t.terminalTodo2}</div>
+                  <div className="text-muted text-xs mt-1.5 opacity-60">{t.terminalIdea}</div>
                 </div>
                 <div className="mt-4 text-xs">
                   <span className="text-accent">you:</span>{" "}

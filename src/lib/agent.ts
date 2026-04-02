@@ -829,10 +829,36 @@ async function getRecentMessages(
     .orderBy(desc(chatMessages.createdAt))
     .limit(limit);
 
-  return rows.reverse().map((r) => ({
-    role: r.role as "user" | "assistant",
-    content: r.contentJson ? JSON.parse(r.contentJson) : r.content,
-  }));
+  // Filter history to only simple text messages to avoid tool_use_id mismatch errors
+  return rows.reverse().reduce<Anthropic.MessageParam[]>((acc, r) => {
+    const parsed = r.contentJson ? JSON.parse(r.contentJson) : r.content;
+
+    // Skip tool_result messages (user role with tool_result blocks)
+    if (Array.isArray(parsed) && parsed.some((b: { type: string }) => b.type === "tool_result")) {
+      return acc;
+    }
+
+    // For assistant messages with tool_use blocks, extract only text
+    if (Array.isArray(parsed) && parsed.some((b: { type: string }) => b.type === "tool_use")) {
+      const textOnly = parsed
+        .filter((b: { type: string }) => b.type === "text")
+        .map((b: { text: string }) => b.text)
+        .join("\n");
+      if (!textOnly) return acc;
+      // Merge with previous if same role
+      const last = acc[acc.length - 1];
+      if (last && last.role === r.role) return acc;
+      acc.push({ role: r.role as "user" | "assistant", content: textOnly });
+      return acc;
+    }
+
+    // Plain text message — avoid consecutive same-role messages
+    const text = typeof parsed === "string" ? parsed : r.content;
+    const last = acc[acc.length - 1];
+    if (last && last.role === r.role) return acc;
+    acc.push({ role: r.role as "user" | "assistant", content: text });
+    return acc;
+  }, []);
 }
 
 // --- Agent loop ---

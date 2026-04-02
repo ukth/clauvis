@@ -7,6 +7,7 @@ import {
   BoltIcon,
   LightBulbIcon,
   KeyIcon,
+  ClipboardDocumentListIcon,
 } from "@heroicons/react/24/outline";
 
 const dict = {
@@ -27,7 +28,8 @@ const dict = {
     feat3: { title: "Telegram bot", desc: "Add todos from your phone at 2am. Check them on your commute." },
     feat4: { title: "Claude Code MCP", desc: "Todos show up when you start coding. Complete them when you're done." },
     feat5: { title: "Ideas & Todos", desc: "Capture fleeting ideas separately from tasks. Convert them to todos when they're ready." },
-    feat6: { title: "Bring your own key", desc: "Free command mode for everyone. Register your API key to unlock AI agent mode." },
+    feat6: { title: "Work Logs", desc: "Record what you did, not just what's left. Track progress per project, review past work anytime." },
+    feat7: { title: "Bring your own key", desc: "Free command mode for everyone. Register your API key to unlock AI agent mode." },
     setup: "Get started",
     step1Title: "Get your API key",
     step1Desc: "on Telegram and send",
@@ -43,6 +45,8 @@ const dict = {
     demoLeft3: "[my-app]\n#1. Fix image upload bug\n#2. Add dark mode",
     demoRight4: "actually let's do that WebP idea",
     demoLeft4: "✅ Idea → Todo: #3 Try WebP conversion for uploads",
+    demoRight5: "done with #1, took 2 hours refactoring the upload handler",
+    demoLeft5: "📝 Work log saved!\n[my-app] Refactored upload handler for image bug fix",
     terminalStart: "Session started",
     terminalTodos: "2 todos:",
     terminalTodo1: "#1. Add dark mode",
@@ -54,6 +58,9 @@ const dict = {
     terminalAsk: "Mark as done in Clauvis?",
     terminalYes: "yes",
     terminalChecked: "✓ Marked as done",
+    terminalLogAsk: "Save a work log for this session?",
+    terminalLogYes: "yes",
+    terminalLogSaved: "📝 Work log saved: Add dark mode",
   },
   ko: {
     tagline: "개발자를 위한 할일 관리",
@@ -72,7 +79,8 @@ const dict = {
     feat3: { title: "텔레그램 봇", desc: "새벽 2시에 떠오른 할일을 폰으로 바로 추가. 출퇴근길에 확인하세요." },
     feat4: { title: "Claude Code MCP", desc: "코딩을 시작하면 할일이 자동으로 표시됩니다. 끝나면 바로 완료 처리." },
     feat5: { title: "아이디어 & 할일", desc: "떠오르는 아이디어를 할일과 분리해서 저장하세요. 구체화되면 할일로 전환." },
-    feat6: { title: "나만의 API 키", desc: "명령어 모드는 무료. API 키를 등록하면 AI 에이전트 모드가 활성화됩니다." },
+    feat6: { title: "작업 로그", desc: "뭘 했는지 기록하세요. 프로젝트별 진행 상황을 추적하고, 언제든 돌아볼 수 있어요." },
+    feat7: { title: "나만의 API 키", desc: "명령어 모드는 무료. API 키를 등록하면 AI 에이전트 모드가 활성화됩니다." },
     setup: "시작하기",
     step1Title: "API 키 발급",
     step1Desc: "텔레그램에서 아래 봇에게",
@@ -88,6 +96,8 @@ const dict = {
     demoLeft3: "[my-app]\n#1. 이미지 업로드 버그 수정\n#2. 다크모드 추가",
     demoRight4: "아 그 WebP 아이디어 할일로 옮겨줘",
     demoLeft4: "✅ 아이디어 → 할일: #3 업로드 시 WebP 변환 적용",
+    demoRight5: "1번 끝났어, 업로드 핸들러 리팩토링하느라 2시간 걸림",
+    demoLeft5: "📝 작업 로그 저장!\n[my-app] 이미지 버그 수정을 위한 업로드 핸들러 리팩토링",
     terminalStart: "세션 시작",
     terminalTodos: "할일 2개:",
     terminalTodo1: "#1. 다크모드 추가",
@@ -99,6 +109,9 @@ const dict = {
     terminalAsk: "Clauvis에서 완료 처리할까요?",
     terminalYes: "ㅇㅇ",
     terminalChecked: "✓ 완료 처리됨",
+    terminalLogAsk: "이번 작업 내용을 로그에 저장할까요?",
+    terminalLogYes: "ㅇㅇ",
+    terminalLogSaved: "📝 작업 로그 저장: 다크모드 추가",
   },
 } as const;
 
@@ -195,6 +208,8 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
                 <Bubble side="left" text={t.demoLeft3} />
                 <Bubble side="right" text={t.demoRight4} />
                 <Bubble side="left" text={t.demoLeft4} />
+                <Bubble side="right" text={t.demoRight5} />
+                <Bubble side="left" text={t.demoLeft5} />
               </div>
             </div>
 
@@ -233,6 +248,15 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
                   <span>{t.terminalYes}</span>
                 </div>
                 <div className="text-xs text-green-500">{t.terminalChecked}</div>
+                <div className="mt-4 text-xs">
+                  <span className="text-accent">claude:</span>{" "}
+                  <span>{t.terminalLogAsk}</span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-accent">you:</span>{" "}
+                  <span>{t.terminalLogYes}</span>
+                </div>
+                <div className="text-xs text-green-500">{t.terminalLogSaved}</div>
                 <div className="text-muted text-xs mt-2">
                   <span className="animate-blink">&#9608;</span>
                 </div>
@@ -254,7 +278,8 @@ export default async function LocalePage({ params }: { params: Promise<{ locale:
               { icon: DevicePhoneMobileIcon, ...t.feat3 },
               { icon: BoltIcon, ...t.feat4 },
               { icon: LightBulbIcon, ...t.feat5 },
-              { icon: KeyIcon, ...t.feat6 },
+              { icon: ClipboardDocumentListIcon, ...t.feat6 },
+              { icon: KeyIcon, ...t.feat7 },
             ].map((feat, i) => (
               <div key={i} className="bg-surface border border-border rounded-xl p-6 card-glow transition-all duration-300">
                 <feat.icon className="w-7 h-7 mb-4 text-accent" />

@@ -63,6 +63,20 @@ export const ideas = pgTable("ideas", {
   archivedAt: timestamp("archived_at"),
 });
 
+export const workLogs = pgTable("work_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull(),
+  number: integer("number").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  date: timestamp("date").notNull(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  source: sourceEnum("source").notNull().default("web"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const chatMessages = pgTable("chat_messages", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")

@@ -1,7 +1,7 @@
 import { db } from "./db";
-import { todos, projects, users, ideas } from "./db/schema";
+import { todos, projects, users, ideas, workLogs } from "./db/schema";
 import { eq, and, desc, isNull } from "drizzle-orm";
-import { getNextTodoNumber, getNextIdeaNumber } from "./db/utils";
+import { getNextTodoNumber, getNextIdeaNumber, getNextWorkLogNumber } from "./db/utils";
 
 const VALID_MODELS = ["haiku", "sonnet", "opus"] as const;
 
@@ -55,6 +55,14 @@ export async function handleCommand(
         return await cmdDelIdea(args, userId);
       case "/idea2todo":
         return await cmdIdeaToTodo(args, userId);
+      case "/log":
+        return await cmdAddLog(args, userId, text);
+      case "/logs":
+        return await cmdListLogs(args, userId);
+      case "/viewlog":
+        return await cmdViewLog(args, userId);
+      case "/dellog":
+        return await cmdDelLog(args, userId);
       case "/help":
         return cmdHelp();
       default:
@@ -633,6 +641,187 @@ async function cmdIdeaToTodo(args: string[], userId: string): Promise<string> {
   return `✅ Idea → Todo: <b>#${todoNumber}</b> ${h(idea.title)}${label}`;
 }
 
+// --- Work Log command handlers ---
+
+async function findWorkLogByNumber(userId: string, num: number) {
+  const [log] = await db
+    .select({
+      id: workLogs.id,
+      number: workLogs.number,
+      title: workLogs.title,
+      content: workLogs.content,
+      date: workLogs.date,
+      source: workLogs.source,
+      projectId: workLogs.projectId,
+      projectName: projects.name,
+      projectSlug: projects.slug,
+      createdAt: workLogs.createdAt,
+    })
+    .from(workLogs)
+    .leftJoin(projects, eq(workLogs.projectId, projects.id))
+    .where(and(eq(workLogs.userId, userId), eq(workLogs.number, num)))
+    .limit(1);
+  return log || null;
+}
+
+async function cmdAddLog(args: string[], userId: string, rawText: string): Promise<string> {
+  if (args.length === 0) {
+    return "Usage: /log title #project\n\nLines after the first become the content.";
+  }
+
+  const commandRemoved = rawText.replace(/^\/log(@\S+)?\s*/, "");
+  const lines = commandRemoved.split("\n");
+  const firstLine = lines[0].trim();
+  const content = lines.slice(1).join("\n").trim();
+
+  let projectSlug: string | null = null;
+  const titleParts: string[] = [];
+
+  for (const word of firstLine.split(/\s+/)) {
+    if (word.startsWith("#") && word.length > 1) {
+      projectSlug = word.slice(1).toLowerCase();
+    } else {
+      titleParts.push(word);
+    }
+  }
+
+  const title = titleParts.join(" ");
+  if (!title) {
+    return "Please enter log title.";
+  }
+
+  if (!content) {
+    return "Please enter log content on the next line.";
+  }
+
+  let projectId: string | null = null;
+  let projectDisplay: string | null = null;
+
+  if (projectSlug) {
+    const project = await findProject(userId, projectSlug);
+    if (!project) {
+      return `Project "${projectSlug}" not found. Check /projects for the list.`;
+    }
+    projectId = project.id;
+    projectDisplay = project.name || project.slug;
+  }
+
+  const number = await getNextWorkLogNumber(userId);
+
+  await db.insert(workLogs).values({
+    userId,
+    number,
+    title,
+    content,
+    date: new Date(),
+    projectId,
+    source: "telegram",
+  });
+
+  const label = projectDisplay ? ` <b>[${h(projectDisplay)}]</b>` : "";
+  return `📝 <b>#${number}</b> ${h(title)}${label}`;
+}
+
+async function cmdListLogs(args: string[], userId: string): Promise<string> {
+  const projectSlug = args[0]?.toLowerCase();
+
+  const conditions = [eq(workLogs.userId, userId)];
+
+  if (projectSlug) {
+    const project = await findProject(userId, projectSlug);
+    if (!project) {
+      return `Project "${projectSlug}" not found.`;
+    }
+    conditions.push(eq(workLogs.projectId, project.id));
+  }
+
+  const result = await db
+    .select({
+      number: workLogs.number,
+      title: workLogs.title,
+      date: workLogs.date,
+      projectName: projects.name,
+      projectSlug: projects.slug,
+    })
+    .from(workLogs)
+    .leftJoin(projects, eq(workLogs.projectId, projects.id))
+    .where(and(...conditions))
+    .orderBy(desc(workLogs.date))
+    .limit(20);
+
+  if (result.length === 0) {
+    const label = projectSlug ? `[${projectSlug}] ` : "";
+    return `${label}No work logs yet! 📝`;
+  }
+
+  const grouped = new Map<string, { display: string; items: typeof result }>();
+  for (const log of result) {
+    const key = log.projectSlug || "__none__";
+    const display = log.projectName || log.projectSlug || "Uncategorized";
+    if (!grouped.has(key)) grouped.set(key, { display, items: [] });
+    grouped.get(key)!.items.push(log);
+  }
+
+  let msg = `📝 <b>${result.length} work logs</b>\n`;
+
+  for (const [, group] of grouped) {
+    msg += `\n<b>[${h(group.display)}]</b>\n`;
+    for (const item of group.items) {
+      const date = item.date.toISOString().split("T")[0];
+      msg += `<b>#${item.number}</b>. ${date} ${h(item.title)}\n`;
+    }
+  }
+
+  return msg;
+}
+
+async function cmdViewLog(args: string[], userId: string): Promise<string> {
+  if (args.length === 0) {
+    return "Usage: /viewlog number";
+  }
+
+  const num = parseInt(args[0]);
+  if (isNaN(num)) {
+    return "Please enter a valid number.";
+  }
+
+  const log = await findWorkLogByNumber(userId, num);
+  if (!log) {
+    return `Work log #${num} not found.`;
+  }
+
+  const project = log.projectName || log.projectSlug || "Uncategorized";
+  const date = log.date.toISOString().split("T")[0];
+
+  return `📝 <b>#${num} ${h(log.title)}</b>
+
+<b>Project:</b> ${h(project)}
+<b>Date:</b> ${date}
+<b>Source:</b> ${log.source}
+
+${h(log.content)}`;
+}
+
+async function cmdDelLog(args: string[], userId: string): Promise<string> {
+  if (args.length === 0) {
+    return "Usage: /dellog number";
+  }
+
+  const num = parseInt(args[0]);
+  if (isNaN(num)) {
+    return "Please enter a valid number.";
+  }
+
+  const log = await findWorkLogByNumber(userId, num);
+  if (!log) {
+    return `Work log #${num} not found.`;
+  }
+
+  await db.delete(workLogs).where(eq(workLogs.id, log.id));
+
+  return `🗑 Deleted log: <b>#${num}</b> ${h(log.title)}`;
+}
+
 function cmdHelp(): string {
   return `📌 Clauvis Commands
 
@@ -649,6 +838,12 @@ function cmdHelp(): string {
 • /viewidea number - View idea detail
 • /delidea number - Delete idea
 • /idea2todo number - Convert idea to todo
+
+[Work Logs]
+• /log title #project - Save work log (newline for content)
+• /logs [project] - List work logs
+• /viewlog number - View log detail
+• /dellog number - Delete log
 
 [Projects]
 • /newproject slug [name] - Create project

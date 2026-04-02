@@ -2,9 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { todos, projects, users, ideas } from "@/lib/db/schema";
+import { todos, projects, users, ideas, workLogs } from "@/lib/db/schema";
 import { eq, and, desc, isNull } from "drizzle-orm";
-import { getNextTodoNumber, getNextIdeaNumber } from "@/lib/db/utils";
+import { getNextTodoNumber, getNextIdeaNumber, getNextWorkLogNumber } from "@/lib/db/utils";
 
 function createServer(userId: string) {
   const server = new McpServer(
@@ -430,6 +430,155 @@ function createServer(userId: string) {
         content: [
           { type: "text" as const, text: `🗑 Project ${target.name || target.slug} deleted.` },
         ],
+      };
+    }
+  );
+
+  // --- Work Log tools ---
+
+  server.registerTool(
+    "add_work_log",
+    {
+      title: "Add Work Log",
+      description: "Save a work log entry. Record what was done, progress made, or milestones reached.",
+      inputSchema: {
+        title: z.string().describe("Summary title of the work done"),
+        content: z.string().describe("Detailed description of the work"),
+        project: z.string().optional().describe("Project slug"),
+        date: z.string().optional().describe("Date of the work (YYYY-MM-DD, defaults to today)"),
+      },
+    },
+    async ({ title, content, project, date }) => {
+      let projectId: string | null = null;
+      let projectLabel = "Uncategorized";
+
+      if (project) {
+        const proj = await db
+          .select()
+          .from(projects)
+          .where(and(eq(projects.slug, project), eq(projects.userId, userId)))
+          .limit(1);
+        if (proj.length > 0) {
+          projectId = proj[0].id;
+          projectLabel = proj[0].name || proj[0].slug;
+        }
+      }
+
+      const [newLog] = await db
+        .insert(workLogs)
+        .values({
+          userId,
+          number: await getNextWorkLogNumber(userId),
+          title,
+          content,
+          date: date ? new Date(date) : new Date(),
+          projectId,
+          source: "mcp",
+        })
+        .returning();
+
+      return {
+        content: [{ type: "text" as const, text: `📝 Work log saved: ${projectLabel} > ${newLog.title}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "list_work_logs",
+    {
+      title: "List Work Logs",
+      description: "List work log entries, optionally filtered by project.",
+      inputSchema: {
+        project: z.string().optional().describe("Filter by project slug"),
+        limit: z.number().optional().describe("Number of entries to return (default: 10)"),
+      },
+    },
+    async ({ project, limit = 10 }) => {
+      const conditions = [eq(workLogs.userId, userId)];
+
+      if (project) {
+        const proj = await db
+          .select()
+          .from(projects)
+          .where(and(eq(projects.slug, project), eq(projects.userId, userId)))
+          .limit(1);
+        if (proj.length === 0) {
+          return { content: [{ type: "text" as const, text: `Project "${project}" not found.` }] };
+        }
+        conditions.push(eq(workLogs.projectId, proj[0].id));
+      }
+
+      const result = await db
+        .select({
+          number: workLogs.number,
+          title: workLogs.title,
+          content: workLogs.content,
+          date: workLogs.date,
+          projectSlug: projects.slug,
+          projectName: projects.name,
+        })
+        .from(workLogs)
+        .leftJoin(projects, eq(workLogs.projectId, projects.id))
+        .where(and(...conditions))
+        .orderBy(desc(workLogs.date))
+        .limit(limit);
+
+      if (result.length === 0) {
+        return { content: [{ type: "text" as const, text: "No work logs." }] };
+      }
+
+      const text = result
+        .map((l) => {
+          const proj = (l.projectName || l.projectSlug) ? `[${l.projectName || l.projectSlug}] ` : "";
+          const date = l.date.toISOString().split("T")[0];
+          return `#${l.number}. ${date} ${proj}${l.title}`;
+        })
+        .join("\n");
+
+      return {
+        content: [{ type: "text" as const, text: `${result.length} work logs:\n${text}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "delete_work_log",
+    {
+      title: "Delete Work Log",
+      description: "Delete a work log entry by number or title keyword.",
+      inputSchema: {
+        target: z.string().describe("Work log number or title keyword"),
+      },
+    },
+    async ({ target }) => {
+      const num = parseInt(target);
+      let matched;
+
+      if (!isNaN(num)) {
+        const [log] = await db
+          .select({ id: workLogs.id, title: workLogs.title })
+          .from(workLogs)
+          .where(and(eq(workLogs.userId, userId), eq(workLogs.number, num)))
+          .limit(1);
+        matched = log;
+      } else {
+        const allLogs = await db
+          .select({ id: workLogs.id, title: workLogs.title })
+          .from(workLogs)
+          .where(eq(workLogs.userId, userId));
+        matched = allLogs.find((l) =>
+          l.title.toLowerCase().includes(target.toLowerCase())
+        );
+      }
+
+      if (!matched) {
+        return { content: [{ type: "text" as const, text: `Work log "${target}" not found.` }] };
+      }
+
+      await db.delete(workLogs).where(eq(workLogs.id, matched.id));
+
+      return {
+        content: [{ type: "text" as const, text: `🗑 ${matched.title} deleted.` }],
       };
     }
   );

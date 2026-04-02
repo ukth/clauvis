@@ -11,7 +11,7 @@ import {
   deleteMessage,
   esc,
 } from "@/lib/telegram";
-import { runAgent, saveMessage } from "@/lib/agent";
+import { runAgent } from "@/lib/agent";
 import { isCommand, handleCommand } from "@/lib/commands";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { randomBytes } from "crypto";
@@ -267,13 +267,9 @@ export async function POST(request: NextRequest) {
     // Show typing indicator
     await sendTyping(chatId);
 
-    // Run the agent with user's API key
+    // Run the agent with user's API key (messages are saved inside runAgent)
     const apiKey = decrypt(encryptedKey);
     const response = await runAgent(text, user.id, apiKey, user.model);
-
-    // Save messages to chat history (after runAgent to avoid duplicate in history)
-    await saveMessage(user.id, "user", text);
-    await saveMessage(user.id, "assistant", response);
 
     // Send response via Telegram (Markdown format)
     await sendMessage(chatId, response, "Markdown");

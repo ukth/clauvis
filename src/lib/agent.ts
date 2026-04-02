@@ -10,7 +10,6 @@ const SYSTEM_PROMPT = `You are Clauvis, a todo and idea management assistant. Us
 Rules:
 - Always respond in the user's language
 - Friendly and concise tone
-- IMPORTANT: Previous messages are conversation HISTORY for context only. Only act on the LAST user message. Never re-execute actions from previous messages — they have already been processed.
 - When adding todos: fix typos/abbreviations, convert relative dates to absolute dates, actively fill the memo field with context/reasons/details from the user's message
 - After adding a todo, show the memo content and ask if they want to modify or add anything
 - If the user wants to add/edit a memo on an existing todo, use update_todo
@@ -792,26 +791,48 @@ async function executeTool(
 
 // --- Conversation history ---
 
-export async function saveMessage(
-  userId: string,
-  role: "user" | "assistant",
-  content: string
-): Promise<void> {
-  await db.insert(chatMessages).values({ userId, role, content });
+function contentToText(content: Anthropic.MessageParam["content"]): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "[unknown]";
+  const texts = content
+    .filter((b): b is Anthropic.TextBlock => "type" in b && b.type === "text")
+    .map((b) => b.text);
+  return texts.join("\n") || "[tool interaction]";
 }
 
-export async function getRecentMessages(
+async function saveMessages(
   userId: string,
-  limit = 10
-): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
-  const messages = await db
-    .select({ role: chatMessages.role, content: chatMessages.content })
+  newMessages: Anthropic.MessageParam[]
+): Promise<void> {
+  for (const msg of newMessages) {
+    await db.insert(chatMessages).values({
+      userId,
+      role: msg.role as "user" | "assistant",
+      content: contentToText(msg.content),
+      contentJson: JSON.stringify(msg.content),
+    });
+  }
+}
+
+async function getRecentMessages(
+  userId: string,
+  limit = 20
+): Promise<Anthropic.MessageParam[]> {
+  const rows = await db
+    .select({
+      role: chatMessages.role,
+      content: chatMessages.content,
+      contentJson: chatMessages.contentJson,
+    })
     .from(chatMessages)
     .where(eq(chatMessages.userId, userId))
     .orderBy(desc(chatMessages.createdAt))
     .limit(limit);
 
-  return messages.reverse();
+  return rows.reverse().map((r) => ({
+    role: r.role as "user" | "assistant",
+    content: r.contentJson ? JSON.parse(r.contentJson) : r.content,
+  }));
 }
 
 // --- Agent loop ---
@@ -854,18 +875,15 @@ ${projectContext || "None"}`;
 
   // Load conversation history
   const history = await getRecentMessages(userId);
+  const messages: Anthropic.MessageParam[] = [...history];
+  const newStartIndex = messages.length;
 
-  const messages: Anthropic.MessageParam[] = [
-    ...history.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.role === "user" ? `[Previous message] ${m.content}` : m.content,
-    })),
-    { role: "user", content: userMessage },
-  ];
+  messages.push({ role: "user", content: userMessage });
 
   console.log(`[AGENT] messages=${JSON.stringify(messages)}`);
 
   const MAX_ITERATIONS = 5;
+  let finalResponse = "Max iterations reached. Please try again.";
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await client.messages.create({
@@ -876,7 +894,6 @@ ${projectContext || "None"}`;
       messages,
     });
 
-    // Check if response contains tool use
     const toolUseBlocks = response.content.filter(
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
     );
@@ -884,15 +901,15 @@ ${projectContext || "None"}`;
       (block): block is Anthropic.TextBlock => block.type === "text"
     );
 
+    // Always push assistant response (includes tool_use blocks if any)
+    messages.push({ role: "assistant", content: response.content });
+
     if (toolUseBlocks.length === 0) {
-      // No tool use - return the text response
-      return textBlocks.map((b) => b.text).join("\n") || "Got it!";
+      finalResponse = textBlocks.map((b) => b.text).join("\n") || "Got it!";
+      break;
     }
 
     // Process tool calls
-    // Add assistant message with full content to messages
-    messages.push({ role: "assistant", content: response.content });
-
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const toolUse of toolUseBlocks) {
       const result = await executeTool(
@@ -910,11 +927,14 @@ ${projectContext || "None"}`;
 
     messages.push({ role: "user", content: toolResults });
 
-    // If stop_reason is "end_turn" and we have text, we're done
     if (response.stop_reason === "end_turn" && textBlocks.length > 0) {
-      return textBlocks.map((b) => b.text).join("\n");
+      finalResponse = textBlocks.map((b) => b.text).join("\n");
+      break;
     }
   }
 
-  return "Max iterations reached. Please try again.";
+  // Save all new messages from this interaction
+  await saveMessages(userId, messages.slice(newStartIndex));
+
+  return finalResponse;
 }

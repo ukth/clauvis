@@ -21,6 +21,7 @@ Rules:
 - Do not change the count, names, or content of tool result items
 - CRITICAL: NEVER say a todo/idea was added, completed, or deleted without actually calling the tool AND receiving a success result. Wait for the tool result first, then confirm.
 - When confirming additions, ALWAYS include the ticket number from the tool result (e.g. "#42 추가했어요"). A confirmation without a number is likely a hallucination.
+- Once a tool returns a success result (e.g. "Added: #42 ..."), that item IS registered. Do NOT re-add it.
 - Format responses in Telegram Markdown: *bold*, _italic_, \`code\`. No special escaping needed.
 
 Todo vs Idea:
@@ -344,7 +345,7 @@ async function execAddTodo(
     ? `${projectDisplayName}[${input.project_slug}]`
     : input.project_slug || "Uncategorized";
   const memoStr = input.memo ? `\nmemo: ${input.memo}` : "";
-  return `Added: [${projectLabel}] ${input.title}${memoStr}`;
+  return `Added: #${number} [${projectLabel}] ${input.title}${memoStr}`;
 }
 
 async function execCompleteTodo(

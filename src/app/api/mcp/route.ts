@@ -816,13 +816,35 @@ export async function POST(request: Request) {
     });
   }
 
+  const acceptHeader = request.headers.get("accept") ?? "";
+  const needsJson = !acceptHeader.includes("application/json");
+  const needsSse = !acceptHeader.includes("text/event-stream");
+
+  let req = request;
+  if (needsJson || needsSse) {
+    const headers = new Headers(request.headers);
+    headers.set(
+      "accept",
+      [acceptHeader, needsJson && "application/json", needsSse && "text/event-stream"]
+        .filter(Boolean)
+        .join(", ")
+    );
+    req = new Request(request.url, {
+      method: request.method,
+      headers,
+      body: request.body,
+      // @ts-expect-error duplex is required for streaming bodies
+      duplex: "half",
+    });
+  }
+
   const server = createServer(userId);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
 
   await server.connect(transport);
-  return transport.handleRequest(request);
+  return transport.handleRequest(req);
 }
 
 export async function GET() {

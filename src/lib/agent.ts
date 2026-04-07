@@ -836,8 +836,26 @@ async function getRecentMessages(
   return rows.reverse().reduce<Anthropic.MessageParam[]>((acc, r) => {
     const parsed = r.contentJson ? JSON.parse(r.contentJson) : r.content;
 
-    // Skip tool_result messages (user role with tool_result blocks)
+    // Convert tool_result messages to text summaries
     if (Array.isArray(parsed) && parsed.some((b: { type: string }) => b.type === "tool_result")) {
+      const summary = parsed
+        .filter((b: { type: string }) => b.type === "tool_result")
+        .map((b: { content: unknown }) => {
+          if (typeof b.content === "string") return b.content;
+          if (Array.isArray(b.content)) {
+            return b.content
+              .filter((c: { type: string }) => c.type === "text")
+              .map((c: { text: string }) => c.text)
+              .join("");
+          }
+          return "";
+        })
+        .filter(Boolean)
+        .join("\n");
+      if (!summary) return acc;
+      const last = acc[acc.length - 1];
+      if (last && last.role === "user") return acc;
+      acc.push({ role: "user", content: `[Tool results]\n${summary}` });
       return acc;
     }
 

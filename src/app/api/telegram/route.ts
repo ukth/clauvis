@@ -275,7 +275,17 @@ export async function POST(request: NextRequest) {
     await sendMessage(chatId, response, "Markdown");
   } catch (error) {
     console.error("Error processing message:", error);
-    await sendMessage(chatId, esc("Something went wrong. Please try again."));
+    if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 401) {
+      await sendMessage(
+        chatId,
+        "🔑 Your Anthropic API key is invalid or has been revoked.\n\nPlease re-register it with /setkey sk-ant-...",
+        false
+      );
+    } else {
+      const status = error && typeof error === "object" && "status" in error ? (error as { status: number }).status : undefined;
+      const code = status ? ` [${status}]` : "";
+      await sendMessage(chatId, esc(`Something went wrong${code}. Please try again.`));
+    }
   }
 
   return NextResponse.json({ ok: true });

@@ -5,6 +5,8 @@
 set -e
 
 CLAUVIS_URL="${CLAUVIS_URL:-https://clauvis.backproach.dev}"
+CURL_CONNECT_TIMEOUT="${CLAUVIS_CONNECT_TIMEOUT:-3}"
+CURL_MAX_TIME="${CLAUVIS_MAX_TIME:-5}"
 
 # --- Detect installed AI tools ---
 HAS_CLAUDE=false
@@ -36,7 +38,7 @@ if [[ ! "$API_KEY" =~ ^clv_ ]]; then
 fi
 
 # Verify API Key
-VERIFY=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects")
+VERIFY=$(curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" -m "$CURL_MAX_TIME" -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects")
 if [ "$VERIFY" != "200" ]; then
   echo "❌ API Key verification failed. Get one from the Telegram bot with /start."
   exit 1
@@ -65,11 +67,17 @@ if [ "$HAS_CLAUDE" = "true" ]; then
 #!/bin/bash
 # Clauvis session start hook - shows todos on first message
 
+set -euo pipefail
+
 PPID_LOCK="/tmp/clauvis-session-$PPID"
 if [ -f "$PPID_LOCK" ]; then
   exit 0
 fi
 touch "$PPID_LOCK"
+
+CONNECT_TIMEOUT="${CLAUVIS_CONNECT_TIMEOUT:-3}"
+MAX_TIME="${CLAUVIS_MAX_TIME:-5}"
+readonly CURL_ARGS=(-sS --connect-timeout "$CONNECT_TIMEOUT" -m "$MAX_TIME")
 
 SETTINGS="$HOME/.claude.json"
 API_KEY=$(python3 -c "
@@ -101,7 +109,7 @@ fi
 # 2. If not found, auto-match by current directory
 if [ -z "$PROJECT" ]; then
   CWD=$(pwd)
-  MATCH=$(curl -s -H "Authorization: Bearer $API_KEY" "$URL/api/projects" 2>/dev/null | python3 -c "
+  MATCH=$(curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $API_KEY" "$URL/api/projects" 2>/dev/null | python3 -c "
 import sys, json
 cwd = '$CWD'
 projects = json.load(sys.stdin)
@@ -119,9 +127,9 @@ for p in projects:
 fi
 
 if [ -n "$PROJECT" ]; then
-  TODOS=$(curl -s -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending&project=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PROJECT'))")" 2>/dev/null)
+  TODOS=$(curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending&project=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PROJECT'))")" 2>/dev/null)
 else
-  TODOS=$(curl -s -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending" 2>/dev/null)
+  TODOS=$(curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending" 2>/dev/null)
 fi
 
 COUNT=$(echo "$TODOS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null)
@@ -180,7 +188,8 @@ existing.append({
     'matcher': '',
     'hooks': [{
         'type': 'command',
-        'command': '$HOOK_DIR/hook.sh'
+        'command': '$HOOK_DIR/hook.sh',
+        'timeout': 5
     }]
 })
 settings['hooks']['UserPromptSubmit'] = existing
@@ -239,6 +248,8 @@ if [ "$HAS_CODEX" = "true" ]; then
 #!/bin/bash
 # Clauvis session hook for Codex CLI
 
+set -euo pipefail
+
 PPID_LOCK="/tmp/clauvis-codex-session-$PPID"
 if [ -f "$PPID_LOCK" ]; then
   exit 0
@@ -262,6 +273,9 @@ except:
 [ -z "$API_KEY" ] && exit 0
 
 CLAUVIS_URL="${CLAUVIS_URL:-https://clauvis.backproach.dev}"
+CONNECT_TIMEOUT="${CLAUVIS_CONNECT_TIMEOUT:-3}"
+MAX_TIME="${CLAUVIS_MAX_TIME:-5}"
+readonly CURL_ARGS=(-sS --connect-timeout "$CONNECT_TIMEOUT" -m "$MAX_TIME")
 
 # Check project from .clauvis/config.md or auto-detect by directory
 PROJECT=""
@@ -271,7 +285,7 @@ fi
 
 if [ -z "$PROJECT" ]; then
   CWD=$(pwd)
-  MATCH=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
+  MATCH=$(curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/projects" 2>/dev/null | python3 -c "
 import sys, json
 cwd = '$CWD'
 projects = json.load(sys.stdin)
@@ -289,9 +303,9 @@ for p in projects:
 fi
 
 if [ -n "$PROJECT" ]; then
-  TODOS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/todos?status=pending&project=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PROJECT'))")" 2>/dev/null)
+  TODOS=$(curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/todos?status=pending&project=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PROJECT'))")" 2>/dev/null)
 else
-  TODOS=$(curl -s -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/todos?status=pending" 2>/dev/null)
+  TODOS=$(curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $API_KEY" "$CLAUVIS_URL/api/todos?status=pending" 2>/dev/null)
 fi
 
 COUNT=$(echo "$TODOS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null)
@@ -331,7 +345,7 @@ config_path = os.path.expanduser('$CODEX_CONFIG')
 api_key = '$API_KEY'
 url = '$CLAUVIS_URL'
 
-new_block = '[mcp_servers.clauvis]\nurl = \"' + url + '/api/mcp\"\nhttp_headers = { Authorization = \"Bearer ' + api_key + '\" }'
+new_block = '[mcp_servers.clauvis]\nurl = \"' + url + '/api/mcp\"\nstartup_timeout_sec = 5\nhttp_headers = { Authorization = \"Bearer ' + api_key + '\" }'
 
 if os.path.exists(config_path):
     with open(config_path) as f:
@@ -385,7 +399,8 @@ existing.append({
     'hooks': [{
         'type': 'command',
         'command': hook_cmd,
-        'statusMessage': 'Loading Clauvis todos'
+        'statusMessage': 'Loading Clauvis todos',
+        'timeout': 5
     }]
 })
 data['hooks']['UserPromptSubmit'] = existing

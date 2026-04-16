@@ -2,6 +2,8 @@
 # Clauvis session start hook
 # Injects todo list on first message of each session
 
+set -euo pipefail
+
 LOCK_FILE="/tmp/clauvis-session-$$"
 
 # Only run once per session (parent PID = session)
@@ -41,6 +43,10 @@ if [ -z "$URL" ]; then
   exit 0
 fi
 
+CONNECT_TIMEOUT="${CLAUVIS_CONNECT_TIMEOUT:-3}"
+MAX_TIME="${CLAUVIS_MAX_TIME:-5}"
+readonly CURL_ARGS=(-sS --connect-timeout "$CONNECT_TIMEOUT" -m "$MAX_TIME")
+
 # Check for clauvis-project in local CLAUDE.md
 PROJECT=""
 for f in CLAUDE.md .claude/CLAUDE.md; do
@@ -55,9 +61,9 @@ done
 
 # Fetch todos
 if [ -n "$PROJECT" ]; then
-  TODOS=$(curl -s -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending&project=$PROJECT" 2>/dev/null)
+  TODOS=$(curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending&project=$PROJECT" 2>/dev/null)
 else
-  TODOS=$(curl -s -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending" 2>/dev/null)
+  TODOS=$(curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $API_KEY" "$URL/api/todos?status=pending" 2>/dev/null)
 fi
 
 # Check if we got results

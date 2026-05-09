@@ -12,6 +12,7 @@ export async function middleware(request: NextRequest) {
   const apiKey = authHeader?.replace("Bearer ", "");
 
   if (!apiKey) {
+    console.log(`[MW] ${pathname} unauth`);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,9 +20,11 @@ export async function middleware(request: NextRequest) {
   const result = await sql`SELECT id FROM users WHERE api_key = ${apiKey} LIMIT 1`;
 
   if (result.length === 0) {
+    console.log(`[MW] ${pathname} invalid_key`);
     return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
   }
 
+  console.log(`[MW] ${pathname} user=${result[0].id.slice(0, 4)}`);
   const response = NextResponse.next();
   response.headers.set("x-user-id", result[0].id);
   return response;

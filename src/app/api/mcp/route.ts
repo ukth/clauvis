@@ -810,11 +810,13 @@ async function getUserFromRequest(request: Request): Promise<string | null> {
 export async function POST(request: Request) {
   const userId = await getUserFromRequest(request);
   if (!userId) {
+    console.log(`[MCP] unauth`);
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
+  console.log(`[MCP] user=${userId.slice(0, 4)}`);
 
   const acceptHeader = request.headers.get("accept") ?? "";
   const needsJson = !acceptHeader.includes("application/json");
@@ -848,9 +850,15 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  return new Response("Clauvis MCP Server", { status: 200 });
+  return new Response("Method Not Allowed", {
+    status: 405,
+    headers: { Allow: "POST" },
+  });
 }
 
 export async function DELETE() {
-  return new Response("Method not allowed", { status: 405 });
+  return new Response("Method Not Allowed", {
+    status: 405,
+    headers: { Allow: "POST" },
+  });
 }

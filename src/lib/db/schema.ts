@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, pgEnum, unique, integer } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, pgEnum, unique, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const priorityEnum = pgEnum("priority", ["urgent", "normal", "low"]);
 export const statusEnum = pgEnum("status", ["pending", "done"]);
@@ -12,6 +12,11 @@ export const users = pgTable("users", {
   telegramChatId: text("telegram_chat_id").unique(),
   encryptedAnthropicKey: text("encrypted_anthropic_key"),
   model: text("model").notNull().default("sonnet"),
+  ledgerSyncedAt: timestamp("ledger_synced_at", { withTimezone: true }),
+  // Last issued transaction #number; numbers are reserved atomically by incrementing this
+  ledgerSeq: integer("ledger_seq").notNull().default(0),
+  // KST date (YYYY-MM-DD) of the last daily ledger digest, used to make the cron idempotent
+  ledgerDigestDate: text("ledger_digest_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -87,3 +92,33 @@ export const chatMessages = pgTable("chat_messages", {
   contentJson: text("content_json"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export type TransactionItem = { name: string; qty?: number | null; price?: number | null };
+
+export const transactions = pgTable("transactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull(),
+  number: integer("number").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  // KRW amount as charged; may be null for foreign charges not yet converted
+  amount: integer("amount"),
+  currency: text("currency").notNull().default("KRW"),
+  originalAmount: text("original_amount"),
+  merchant: text("merchant").notNull(),
+  cardOrg: text("card_org").notNull(),
+  cardName: text("card_name"),
+  installmentMonths: integer("installment_months").notNull().default(0),
+  status: text("status").notNull().default("approved"),
+  category: text("category"),
+  items: jsonb("items").$type<TransactionItem[]>(),
+  memo: text("memo"),
+  externalId: text("external_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("transactions_user_external_idx").on(table.userId, table.externalId),
+  uniqueIndex("transactions_user_number_idx").on(table.userId, table.number),
+  index("transactions_user_occurred_idx").on(table.userId, table.occurredAt),
+]);

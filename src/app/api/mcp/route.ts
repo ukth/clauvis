@@ -5,6 +5,14 @@ import { db } from "@/lib/db";
 import { todos, projects, users, ideas, workLogs } from "@/lib/db/schema";
 import { eq, and, desc, isNull } from "drizzle-orm";
 import { getNextTodoNumber, getNextIdeaNumber, getNextWorkLogNumber } from "@/lib/db/utils";
+import {
+  formatMonthSummary,
+  formatTransactionLine,
+  kstMonthString,
+  listTransactions,
+  summarizeMonth,
+  updateTransactionMemo,
+} from "@/lib/ledger";
 
 function createServer(userId: string) {
   const server = new McpServer(
@@ -786,6 +794,71 @@ function createServer(userId: string) {
 
       return {
         content: [{ type: "text" as const, text: `✅ Idea → Todo: #${todoNumber} ${matched.title}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "list_transactions",
+    {
+      title: "List Transactions",
+      description: "List card transactions (personal ledger) for a KST month, newest first.",
+      inputSchema: {
+        month: z.string().regex(/^(19|20)\d{2}-(0[1-9]|1[0-2])$/).optional().describe("Month in YYYY-MM (KST, default: current month)"),
+        limit: z.number().int().min(1).max(500).optional().describe("Max rows (default: 100)"),
+      },
+    },
+    async ({ month, limit }) => {
+      const targetMonth = month ?? kstMonthString();
+      const rows = await listTransactions(userId, { month: targetMonth, limit: limit ?? 100 });
+
+      if (rows.length === 0) {
+        return { content: [{ type: "text" as const, text: `No transactions in ${targetMonth}.` }] };
+      }
+
+      const text = rows.map((tx) => formatTransactionLine(tx, { withDate: true })).join("\n");
+      return {
+        content: [{ type: "text" as const, text: `${rows.length} transactions (${targetMonth}):\n${text}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "spending_summary",
+    {
+      title: "Spending Summary",
+      description: "Monthly spending summary: net total, change vs previous month, by category, by card, top merchants.",
+      inputSchema: {
+        month: z.string().regex(/^(19|20)\d{2}-(0[1-9]|1[0-2])$/).optional().describe("Month in YYYY-MM (KST, default: current month)"),
+      },
+    },
+    async ({ month }) => {
+      const summary = await summarizeMonth(userId, month ?? kstMonthString());
+      return { content: [{ type: "text" as const, text: formatMonthSummary(summary) }] };
+    }
+  );
+
+  server.registerTool(
+    "update_transaction_memo",
+    {
+      title: "Update Transaction Memo",
+      description: "Set the memo and/or category of a transaction by its #number.",
+      inputSchema: {
+        number: z.number().int().min(1).describe("Transaction #number"),
+        memo: z.string().max(1000).optional().describe("Memo"),
+        category: z.string().max(50).optional().describe("Category (e.g. 식비, 교통, 업무)"),
+      },
+    },
+    async ({ number, memo, category }) => {
+      if (memo === undefined && category === undefined) {
+        return { content: [{ type: "text" as const, text: "Provide memo or category." }] };
+      }
+      const updated = await updateTransactionMemo(userId, number, { memo, category });
+      if (!updated) {
+        return { content: [{ type: "text" as const, text: `Transaction #${number} not found.` }] };
+      }
+      return {
+        content: [{ type: "text" as const, text: `📝 Updated: ${formatTransactionLine(updated, { withDate: true })}` }],
       };
     }
   );

@@ -127,6 +127,7 @@ TELEGRAM_BOT_TOKEN=<your bot token>
 TELEGRAM_WEBHOOK_SECRET=<random secret string>
 ENCRYPTION_KEY=<32-byte hex key for API key encryption>
 ADMIN_SECRET_KEY=<random secret for user creation API>
+CRON_SECRET=<random secret for Vercel Cron (daily ledger digest)>
 ```
 
 Generate `ENCRYPTION_KEY` with:

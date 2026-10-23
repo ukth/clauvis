@@ -1,9 +1,20 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 import { db } from "./db";
 import { todos, projects, users, chatMessages, ideas } from "./db/schema";
 import { eq, and, desc, isNull } from "drizzle-orm";
 import { getNextTodoNumber, getNextIdeaNumber } from "./db/utils";
 import { esc } from "./telegram";
+import {
+  formatMonthSummary,
+  formatTransactionLine,
+  isValidMonth,
+  kstDateString,
+  kstMonthString,
+  listTransactions,
+  summarizeMonth,
+  updateTransactionMemo,
+} from "./ledger";
 
 const SYSTEM_PROMPT = `You are Clauvis, a todo and idea management assistant. Use the appropriate tools based on the user's message, or respond directly for casual conversation.
 
@@ -29,7 +40,12 @@ Todo vs Idea:
 - Idea: thoughts, inspirations, references, or not-yet-concrete plans (e.g. "maybe add dark mode", "look into X", "interesting approach for Y")
 - When ambiguous, ask the user: "할일로 추가할까요, 아이디어로 메모할까요?"
 - Keywords suggesting idea: "아이디어", "메모", "나중에 참고", "생각인데", "영감", "maybe", "idea"
-- Keywords suggesting todo: "해야", "수정", "추가해줘", "고쳐", "fix", "add", "implement"`;
+- Keywords suggesting todo: "해야", "수정", "추가해줘", "고쳐", "fix", "add", "implement"
+
+Spending ledger:
+- The user's card transactions are synced into a ledger. Each transaction has a stable #number (separate from todo numbers). Use list_transactions / spending_summary for spending questions (months are YYYY-MM in KST).
+- You may receive replies to a daily spending digest (an earlier assistant message listing "#번호 시각 가맹점 금액원 [카드]"). Map the reply to transaction(s) by #number, merchant, or amount and call update_transaction_memo (memo and/or category). If it matches multiple or no transactions, ask a short clarification instead of guessing.
+- Replies to the digest refer to transactions, not todos — do not add todos for them unless explicitly asked.`;
 
 const toolDefinitions: Anthropic.Tool[] = [
   {
@@ -243,6 +259,42 @@ const toolDefinitions: Anthropic.Tool[] = [
         deadline: { type: "string", description: "Deadline for the new todo (YYYY-MM-DD)" },
       },
       required: [],
+    },
+  },
+  {
+    name: "list_transactions",
+    description: "List card transactions (spending ledger) for a KST month, newest first. Each line starts with the stable #number.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        month: { type: "string", description: "Month in YYYY-MM (KST, default: current month)" },
+        limit: { type: "number", description: "Max rows (default: 50)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "spending_summary",
+    description: "Monthly spending summary: net total, change vs previous month, by category, by card, top merchants.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        month: { type: "string", description: "Month in YYYY-MM (KST, default: current month)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "update_transaction_memo",
+    description: "Set the memo and/or category of a card transaction by its #number.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        number: { type: "number", description: "Transaction #number" },
+        memo: { type: "string", description: "Memo" },
+        category: { type: "string", description: "Category (e.g. 식비, 교통, 업무)" },
+      },
+      required: ["number"],
     },
   },
 ];
@@ -737,6 +789,55 @@ async function execConvertIdeaToTodo(
   return `Converted idea to todo: #${todoNumber} ${matched.title}`;
 }
 
+// --- Ledger execution functions ---
+
+const listTransactionsInput = z.object({
+  month: z.string().optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+});
+
+const spendingSummaryInput = z.object({
+  month: z.string().optional(),
+});
+
+const updateTransactionMemoInput = z.object({
+  number: z.number().int().min(1),
+  memo: z.string().max(1000).optional(),
+  category: z.string().max(50).optional(),
+});
+
+function invalidInput(error: z.ZodError): string {
+  return `Invalid input: ${error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`;
+}
+
+async function execListTransactions(userId: string, rawInput: unknown): Promise<string> {
+  const parsed = listTransactionsInput.safeParse(rawInput);
+  if (!parsed.success) return invalidInput(parsed.error);
+  const month = parsed.data.month ?? kstMonthString();
+  if (!isValidMonth(month)) return "Invalid month. Use YYYY-MM.";
+  const rows = await listTransactions(userId, { month, limit: parsed.data.limit ?? 50 });
+  if (rows.length === 0) return `No transactions in ${month}.`;
+  return `${rows.length} transactions (${month}):\n${rows.map((tx) => formatTransactionLine(tx, { withDate: true })).join("\n")}`;
+}
+
+async function execSpendingSummary(userId: string, rawInput: unknown): Promise<string> {
+  const parsed = spendingSummaryInput.safeParse(rawInput);
+  if (!parsed.success) return invalidInput(parsed.error);
+  const month = parsed.data.month ?? kstMonthString();
+  if (!isValidMonth(month)) return "Invalid month. Use YYYY-MM.";
+  return formatMonthSummary(await summarizeMonth(userId, month));
+}
+
+async function execUpdateTransactionMemo(userId: string, rawInput: unknown): Promise<string> {
+  const parsed = updateTransactionMemoInput.safeParse(rawInput);
+  if (!parsed.success) return invalidInput(parsed.error);
+  const { number, memo, category } = parsed.data;
+  if (memo === undefined && category === undefined) return "Provide memo or category.";
+  const updated = await updateTransactionMemo(userId, number, { memo, category });
+  if (!updated) return `Transaction #${number} not found.`;
+  return `Updated: ${formatTransactionLine(updated, { withDate: true })}`;
+}
+
 // --- Tool dispatcher ---
 
 async function executeTool(
@@ -787,6 +888,12 @@ async function executeTool(
       return execConvertIdeaToTodo(userId, toolInput as {
         number?: number; keyword?: string; priority?: string; deadline?: string;
       });
+    case "list_transactions":
+      return execListTransactions(userId, toolInput);
+    case "spending_summary":
+      return execSpendingSummary(userId, toolInput);
+    case "update_transaction_memo":
+      return execUpdateTransactionMemo(userId, toolInput);
     default:
       return `Unknown tool: ${toolName}`;
   }
@@ -876,7 +983,11 @@ async function getRecentMessages(
     // Plain text message — avoid consecutive same-role messages
     const text = typeof parsed === "string" ? parsed : r.content;
     const last = acc[acc.length - 1];
-    if (last && last.role === r.role) return acc;
+    if (last && last.role === r.role) {
+      // Merge plain text (e.g. a cron digest following an agent reply) so the newer message is not lost
+      if (r.role === "assistant" && typeof last.content === "string") last.content = `${last.content}\n\n${text}`;
+      return acc;
+    }
     acc.push({ role: r.role as "user" | "assistant", content: text });
     return acc;
   }, []);
@@ -911,7 +1022,7 @@ export async function runAgent(
     })
     .join("\n");
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = kstDateString();
 
   const systemPrompt = `${SYSTEM_PROMPT}
 

@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 
+const PUBLIC_SEGMENTS = new Set(["telegram", "mcp", "users", "cron"]);
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/api/telegram" || pathname === "/api/users" || pathname === "/api/mcp") {
-    return NextResponse.next();
+  // Routes that authenticate themselves (cron uses CRON_SECRET). Match whole path segments only.
+  const segment = pathname.split("/")[2];
+  if (PUBLIC_SEGMENTS.has(segment)) {
+    // Never let a client-supplied x-user-id through to self-authenticating routes
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete("x-user-id");
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   const authHeader = request.headers.get("authorization");
@@ -25,13 +32,15 @@ export async function middleware(request: NextRequest) {
   }
 
   console.log(`[MW] ${pathname} user=${result[0].id.slice(0, 4)}`);
-  const response = NextResponse.next();
-  response.headers.set("x-user-id", result[0].id);
-  return response;
+  // Forward the authenticated id as a *request* header so route handlers can read it.
+  // Overwrites any client-supplied x-user-id, which would otherwise allow impersonation.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-user-id", result[0].id);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {
   matcher: [
-    "/api/((?!telegram|mcp|users).*)",
+    "/api/((?!(?:telegram|mcp|users|cron)(?:/|$)).*)",
   ],
 };

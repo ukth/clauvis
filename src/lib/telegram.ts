@@ -4,7 +4,8 @@ function escapeMarkdownV2(text: string): string {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
 }
 
-export async function sendMessage(chatId: number, text: string, parseMode: "MarkdownV2" | "Markdown" | "HTML" | false = "MarkdownV2") {
+/** Returns true if Telegram accepted the message (directly or via the plain-text fallback). */
+export async function sendMessage(chatId: number, text: string, parseMode: "MarkdownV2" | "Markdown" | "HTML" | false = "MarkdownV2"): Promise<boolean> {
   const body: Record<string, unknown> = { chat_id: chatId, text };
   if (parseMode) body.parse_mode = parseMode;
 
@@ -18,12 +19,14 @@ export async function sendMessage(chatId: number, text: string, parseMode: "Mark
     const resBody = await res.text();
     console.error("Telegram sendMessage failed:", res.status, resBody);
     // Fallback to plain text
-    await fetch(`${TELEGRAM_API}/sendMessage`, {
+    const fallback = await fetch(`${TELEGRAM_API}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text }),
     });
+    return fallback.ok;
   }
+  return true;
 }
 
 export { escapeMarkdownV2 as esc };

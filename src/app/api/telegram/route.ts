@@ -10,6 +10,7 @@ import {
   answerCallbackQuery,
   deleteMessage,
   esc,
+  markdownToTelegramHtml,
 } from "@/lib/telegram";
 import { runAgent } from "@/lib/agent";
 import { isCommand, handleCommand } from "@/lib/commands";
@@ -273,8 +274,8 @@ export async function POST(request: NextRequest) {
     const apiKey = decrypt(encryptedKey);
     const response = await runAgent(text, user.id, apiKey, user.model);
 
-    // Send response via Telegram (Markdown format)
-    await sendMessage(chatId, response, "Markdown");
+    // Agent writes Markdown; send as escaped Telegram HTML so special chars never break parsing
+    await sendMessage(chatId, markdownToTelegramHtml(response), "HTML");
   } catch (error) {
     console.error("Error processing message:", error);
     if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 401) {

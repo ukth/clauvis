@@ -11,6 +11,17 @@ const MONTH_RE = /^(19|20)\d{2}-(0[1-9]|1[0-2])$/;
 
 export const SHINHAN_THRESHOLD = 300_000;
 
+/** Fixed spending categories. Anything else is rejected so the names never drift. */
+export const CATEGORIES = [
+  "외식", "배달", "카페·간식", "장보기", "생필품", "쇼핑", "교통",
+  "여행", "통신비", "구독·AI", "업무", "의료", "경조사·선물", "기타",
+] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+export function isCategory(value: string): value is Category {
+  return (CATEGORIES as readonly string[]).includes(value);
+}
+
 export type DateRange = { start: Date; end: Date };
 
 /** Shift a UTC instant so its UTC fields read as KST wall-clock fields. */

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUserId } from "@/lib/auth";
-import { updateTransactionMemo } from "@/lib/ledger";
+import { CATEGORIES, updateTransactionMemo } from "@/lib/ledger";
 
 const patchSchema = z
   .object({
     memo: z.string().max(1000).nullable().optional(),
-    category: z.string().max(50).nullable().optional(),
+    category: z.enum(CATEGORIES).nullable().optional(),
     excluded: z.boolean().optional(),
     excludeReason: z.string().max(200).nullable().optional(),
   })

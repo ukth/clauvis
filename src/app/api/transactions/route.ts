@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { transactions, users } from "@/lib/db/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { getUserId } from "@/lib/auth";
-import { isValidMonth, kstMonthString, listTransactions, MANUAL_CARD_ORG, reserveTransactionNumbers } from "@/lib/ledger";
+import { isCategory, isValidMonth, kstMonthString, listTransactions, MANUAL_CARD_ORG, reserveTransactionNumbers } from "@/lib/ledger";
+import { classifyUncategorized } from "@/lib/ledger-classify";
 
 const MAX_BATCH = 500;
 
@@ -124,7 +125,8 @@ export async function POST(request: NextRequest) {
       cardName: tx.cardName ?? null,
       installmentMonths: tx.installmentMonths ?? 0,
       status: tx.status ?? "approved",
-      category: tx.category ?? null,
+      // Unknown names are dropped so the AI classifier picks from the fixed list
+      category: tx.category && isCategory(tx.category) ? tx.category : null,
       items: tx.items ?? null,
       memo: tx.memo ?? null,
       externalId: tx.externalId,
@@ -176,6 +178,10 @@ export async function POST(request: NextRequest) {
   }
 
   await db.update(users).set({ ledgerSyncedAt: new Date() }).where(eq(users.id, userId));
+
+  // Classify after responding so the Mac sync never waits on the model. Runs on every sync
+  // (cheap select when nothing is pending) so rows a failed run missed are retried hourly.
+  after(() => classifyUncategorized(userId));
 
   console.log(`[LEDGER] sync user=${userId.slice(0, 4)} inserted=${inserted} updated=${updated}`);
   return NextResponse.json({ inserted, updated });

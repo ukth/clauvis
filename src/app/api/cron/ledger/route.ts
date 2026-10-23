@@ -19,6 +19,7 @@ import {
   summarizeMonth,
   summarizeRange,
 } from "@/lib/ledger";
+import { classifyUncategorized } from "@/lib/ledger-classify";
 
 const SYNC_STALE_MS = 48 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -69,7 +70,7 @@ async function buildSections(user: LedgerUser, now: Date): Promise<string[]> {
       `합계: ${formatWon(sumNet(rows))}`,
       ...(monthToDate ? [monthToDate] : []),
       "",
-      "메모할 게 있으면 '#12 사무실 비품'처럼 답장 주세요.",
+      "분류는 AI가 자동으로 붙였습니다. 틀리거나 메모할 게 있으면 '#12 장보기', '#12 사무실 비품'처럼 답장 주세요.",
     ].join("\n"));
   } else if (monthToDate) {
     sections.push(`📒 어제(${label}) 사용 내역 없음\n${monthToDate}`);
@@ -117,6 +118,8 @@ export async function GET(request: NextRequest) {
     if (!target.telegramChatId) continue;
     const user: LedgerUser = { ...target, telegramChatId: target.telegramChatId };
     try {
+      // Catch rows a failed post-sync classification missed, so the digest shows categories
+      await classifyUncategorized(user.id);
       const sections = await buildSections(user, now);
       if (sections.length === 0) {
         skipped++;

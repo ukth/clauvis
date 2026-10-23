@@ -20,6 +20,7 @@ import {
   deleteManualTransaction,
   excludeTransaction,
   includeTransaction,
+  CATEGORIES,
 } from "./ledger";
 
 const SYSTEM_PROMPT = `You are Clauvis, a todo and idea management assistant. Use the appropriate tools based on the user's message, or respond directly for casual conversation.
@@ -59,6 +60,7 @@ Spending ledger:
 - If add_transaction reports a duplicate, do not retry; tell the user the existing #number.
 - delete_transaction only works for manually added entries; synced card transactions cannot be deleted. Call it only when the user names a #number or asks to undo the entry just added, and always echo the #number in the confirmation.
 - When the user asks to cancel/delete/remove a transaction ("지워", "삭제", "빼줘", "취소함"), act immediately — do not tell them to wait for a card cancellation: manual entries → delete_transaction; card rows (or if delete_transaction says it is a synced card transaction) → exclude_transaction, then say in one line that it was excluded from totals and can be restored. A later card-company cancellation SMS for an excluded charge is excluded automatically, so there is no double subtraction. "다시 넣어줘"/"복구" → include_transaction. Always echo the #number.
+- Categories are a fixed list: 외식, 배달, 카페·간식, 장보기, 생필품, 쇼핑, 교통, 여행, 통신비, 구독·AI, 업무, 의료, 경조사·선물, 기타. New card rows are auto-classified by AI; the user reviews and corrects them. A reply like "#12 장보기" or "그거 외식 아니고 경조사" → update_transaction_memo with the category. A reply that is not a category name is a memo. Always set a category on add_transaction.
 - Identify the row by #number, or by a merchant/amount reference that matches exactly one recent transaction (call list_transactions to check). If it matches several or none, ask which #number instead of guessing.`;
 
 const toolDefinitions: Anthropic.Tool[] = [
@@ -306,7 +308,7 @@ const toolDefinitions: Anthropic.Tool[] = [
       properties: {
         number: { type: "number", description: "Transaction #number" },
         memo: { type: "string", description: "Memo" },
-        category: { type: "string", description: "Category (e.g. 식비, 교통, 업무)" },
+        category: { type: "string", enum: [...CATEGORIES], description: "Category" },
       },
       required: ["number"],
     },
@@ -325,7 +327,7 @@ const toolDefinitions: Anthropic.Tool[] = [
           description: "Payment method: transfer(계좌이체, default), cash(현금), card, other",
         },
         occurred_at: { type: "string", description: "ISO datetime with +09:00 offset (default: now)" },
-        category: { type: "string", description: "Category (e.g. 식비, 가족, 교통)" },
+        category: { type: "string", enum: [...CATEGORIES], description: "Category (always set; pick the closest)" },
         memo: { type: "string", description: "Memo" },
       },
       required: ["amount", "merchant"],
@@ -871,7 +873,7 @@ const spendingSummaryInput = z.object({
 const updateTransactionMemoInput = z.object({
   number: z.number().int().min(1),
   memo: z.string().max(1000).optional(),
-  category: z.string().max(50).optional(),
+  category: z.enum(CATEGORIES).optional(),
 });
 
 function invalidInput(error: z.ZodError): string {
@@ -911,7 +913,7 @@ const addTransactionInput = z.object({
   merchant: z.string().min(1).max(100),
   method: z.enum(["transfer", "cash", "card", "other"]).optional(),
   occurred_at: z.string().optional(),
-  category: z.string().max(50).optional(),
+  category: z.enum(CATEGORIES).optional(),
   memo: z.string().max(1000).optional(),
 });
 

@@ -58,9 +58,8 @@ Spending ledger:
 - If the method is card, call list_transactions first; if a synced card row already matches (same amount, similar time/merchant), do NOT add it (it would be double-counted) and tell the user it is already recorded with its #number.
 - If add_transaction reports a duplicate, do not retry; tell the user the existing #number.
 - delete_transaction only works for manually added entries; synced card transactions cannot be deleted. Call it only when the user names a #number or asks to undo the entry just added, and always echo the #number in the confirmation.
-- When the user asks to cancel/delete/remove a transaction: manual entries → delete_transaction; card rows (or if delete_transaction says it is a synced card transaction) → exclude_transaction, then say it was excluded from totals and can be restored. "다시 넣어줘"/"복구" → include_transaction. Always echo the #number.
-- Never exclude without an explicit #number, unless you yourself echoed that exact #number in your immediately previous message and the user is clearly referring to it; otherwise ask which #number.
-- If the user says a card payment was actually cancelled at the store/card company, tell them the card company's cancellation SMS will offset it automatically after the next Mac sync, so excluding is usually unnecessary (excluding as well would double-subtract).`;
+- When the user asks to cancel/delete/remove a transaction ("지워", "삭제", "빼줘", "취소함"), act immediately — do not tell them to wait for a card cancellation: manual entries → delete_transaction; card rows (or if delete_transaction says it is a synced card transaction) → exclude_transaction, then say in one line that it was excluded from totals and can be restored. A later card-company cancellation SMS for an excluded charge is excluded automatically, so there is no double subtraction. "다시 넣어줘"/"복구" → include_transaction. Always echo the #number.
+- Identify the row by #number, or by a merchant/amount reference that matches exactly one recent transaction (call list_transactions to check). If it matches several or none, ask which #number instead of guessing.`;
 
 const toolDefinitions: Anthropic.Tool[] = [
   {

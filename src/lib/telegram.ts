@@ -31,6 +31,40 @@ export async function sendMessage(chatId: number, text: string, parseMode: "Mark
 
 export { escapeMarkdownV2 as esc };
 
+// Telegram limit is 4096 UTF-16 code units; keep a margin
+const TELEGRAM_CHUNK_LENGTH = 4000;
+
+/** Split text into chunks under the Telegram limit, breaking on line boundaries. */
+export function splitForTelegram(text: string, limit = TELEGRAM_CHUNK_LENGTH): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  for (const line of text.split("\n")) {
+    // An overlong single line is split by code points so surrogate pairs stay intact
+    const pieces: string[] = [];
+    let piece = "";
+    for (const ch of line) {
+      if (piece.length + ch.length > limit) {
+        pieces.push(piece);
+        piece = "";
+      }
+      piece += ch;
+    }
+    pieces.push(piece);
+
+    for (const p of pieces) {
+      const candidate = current ? `${current}\n${p}` : p;
+      if (candidate.length > limit) {
+        chunks.push(current);
+        current = p;
+      } else {
+        current = candidate;
+      }
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 /**
  * Convert the agent's Markdown (**bold**, *bold*, ~~strike~~, `code`, # headings) to Telegram HTML.
  * Everything else is HTML-escaped, so merchant names like "(주)" or "a_b" can't break parsing.

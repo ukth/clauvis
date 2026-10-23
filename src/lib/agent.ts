@@ -1195,7 +1195,7 @@ ${projectContext || "None"}`;
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await client.messages.create({
       model: modelId,
-      max_tokens: 1024,
+      max_tokens: 4096,
       system: systemPrompt,
       tools: toolDefinitions,
       messages,
@@ -1213,6 +1213,7 @@ ${projectContext || "None"}`;
 
     if (toolUseBlocks.length === 0) {
       finalResponse = textBlocks.map((b) => b.text).join("\n") || "Got it!";
+      if (response.stop_reason === "max_tokens") finalResponse += "\n\n(길이 제한으로 여기서 잘렸어요)";
       break;
     }
 

@@ -11,6 +11,7 @@ import {
   deleteMessage,
   esc,
   markdownToTelegramHtml,
+  splitForTelegram,
 } from "@/lib/telegram";
 import { runAgent } from "@/lib/agent";
 import { isCommand, handleCommand } from "@/lib/commands";
@@ -274,8 +275,11 @@ export async function POST(request: NextRequest) {
     const apiKey = decrypt(encryptedKey);
     const response = await runAgent(text, user.id, apiKey, user.model);
 
-    // Agent writes Markdown; send as escaped Telegram HTML so special chars never break parsing
-    await sendMessage(chatId, markdownToTelegramHtml(response), "HTML");
+    // Agent writes Markdown; send as escaped Telegram HTML so special chars never break parsing.
+    // Split the Markdown first (HTML escaping can lengthen it), one message per chunk.
+    for (const chunk of splitForTelegram(response, 3500)) {
+      await sendMessage(chatId, markdownToTelegramHtml(chunk), "HTML");
+    }
   } catch (error) {
     console.error("Error processing message:", error);
     if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 401) {

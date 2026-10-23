@@ -3,7 +3,7 @@ import { timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 import { users, transactions, chatMessages } from "@/lib/db/schema";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
-import { sendMessage } from "@/lib/telegram";
+import { sendMessage, splitForTelegram } from "@/lib/telegram";
 import {
   formatMonthSummary,
   formatTransactionLine,
@@ -22,8 +22,6 @@ import {
 
 const SYNC_STALE_MS = 48 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-// Telegram limit is 4096 UTF-16 code units; keep a margin
-const TELEGRAM_CHUNK_LENGTH = 4000;
 
 type LedgerUser = { id: string; telegramChatId: string; ledgerSyncedAt: Date | null };
 
@@ -34,37 +32,6 @@ function isAuthorized(request: NextRequest): boolean {
   const expected = Buffer.from(`Bearer ${secret}`);
   const actual = Buffer.from(header);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
-}
-
-/** Split text into chunks under the Telegram limit, breaking on line boundaries. */
-function chunkText(text: string): string[] {
-  const chunks: string[] = [];
-  let current = "";
-  for (const line of text.split("\n")) {
-    // An overlong single line is split by code points so surrogate pairs stay intact
-    const pieces: string[] = [];
-    let piece = "";
-    for (const ch of line) {
-      if (piece.length + ch.length > TELEGRAM_CHUNK_LENGTH) {
-        pieces.push(piece);
-        piece = "";
-      }
-      piece += ch;
-    }
-    pieces.push(piece);
-
-    for (const p of pieces) {
-      const candidate = current ? `${current}\n${p}` : p;
-      if (candidate.length > TELEGRAM_CHUNK_LENGTH) {
-        chunks.push(current);
-        current = p;
-      } else {
-        current = candidate;
-      }
-    }
-  }
-  if (current) chunks.push(current);
-  return chunks;
 }
 
 /** Month-to-date line, or null when nothing has been spent this month (avoids an empty "0원" digest). */
@@ -170,7 +137,7 @@ export async function GET(request: NextRequest) {
       const chatId = Number(user.telegramChatId);
       let delivered = 0;
       let undelivered = 0;
-      for (const chunk of sections.flatMap(chunkText)) {
+      for (const chunk of sections.flatMap((section) => splitForTelegram(section))) {
         if (!(await sendMessage(chatId, chunk, false))) {
           undelivered++;
           continue;

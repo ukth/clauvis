@@ -156,6 +156,23 @@ export async function POST(request: NextRequest) {
 
     updated = existingIds.size;
     inserted = incoming.length - updated;
+
+    // A cancellation of a charge the user already excluded must not subtract again:
+    // auto-exclude it when an excluded approved row matches (same card org + amount, within 120 days before).
+    const cancelIds = incoming.filter((tx) => tx.status === "cancelled").map((tx) => tx.externalId);
+    if (cancelIds.length > 0) {
+      await db.execute(sql`
+        UPDATE transactions AS c
+        SET excluded_at = now(), exclude_reason = '원거래 #' || o.number || ' 제외됨'
+        FROM transactions AS o
+        WHERE c.user_id = ${userId}
+          AND c.external_id IN (${sql.join(cancelIds.map((id) => sql`${id}`), sql`, `)})
+          AND c.status = 'cancelled' AND c.excluded_at IS NULL AND c.amount IS NOT NULL
+          AND o.user_id = c.user_id AND o.status = 'approved' AND o.excluded_at IS NOT NULL
+          AND o.card_org = c.card_org AND o.amount = c.amount
+          AND o.occurred_at <= c.occurred_at AND o.occurred_at > c.occurred_at - interval '120 days'
+      `);
+    }
   }
 
   await db.update(users).set({ ledgerSyncedAt: new Date() }).where(eq(users.id, userId));

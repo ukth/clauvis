@@ -32,7 +32,7 @@ export async function sendMessage(chatId: number, text: string, parseMode: "Mark
 export { escapeMarkdownV2 as esc };
 
 /**
- * Convert the agent's Markdown (**bold**, *bold*, `code`, # headings) to Telegram HTML.
+ * Convert the agent's Markdown (**bold**, *bold*, ~~strike~~, `code`, # headings) to Telegram HTML.
  * Everything else is HTML-escaped, so merchant names like "(주)" or "a_b" can't break parsing.
  */
 export function markdownToTelegramHtml(md: string): string {
@@ -45,6 +45,7 @@ export function markdownToTelegramHtml(md: string): string {
     .replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>")
     .replace(/\*\*([^*\n]+?)\*\*/g, "<b>$1</b>")
     .replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\w)/g, "$1<b>$2</b>")
+    .replace(/~~([^~\n]+?)~~/g, "<s>$1</s>")
     .replace(/\u0000(\d+)\u0000/g, (_, i: string) => `<code>${codes[Number(i)]}</code>`);
 }
 

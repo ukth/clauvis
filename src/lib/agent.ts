@@ -11,9 +11,13 @@ import {
   isValidMonth,
   kstDateString,
   kstMonthString,
+  kstTimeString,
+  parseIsoWithOffset,
   listTransactions,
   summarizeMonth,
   updateTransactionMemo,
+  addManualTransaction,
+  deleteManualTransaction,
 } from "./ledger";
 
 const SYSTEM_PROMPT = `You are Clauvis, a todo and idea management assistant. Use the appropriate tools based on the user's message, or respond directly for casual conversation.
@@ -45,7 +49,13 @@ Todo vs Idea:
 Spending ledger:
 - The user's card transactions are synced into a ledger. Each transaction has a stable #number (separate from todo numbers). Use list_transactions / spending_summary for spending questions (months are YYYY-MM in KST).
 - You may receive replies to a daily spending digest (an earlier assistant message listing "#번호 시각 가맹점 금액원 [카드]"). Map the reply to transaction(s) by #number, merchant, or amount and call update_transaction_memo (memo and/or category). If it matches multiple or no transactions, ask a short clarification instead of guessing.
-- Replies to the digest refer to transactions, not todos — do not add todos for them unless explicitly asked.`;
+- Replies to the digest refer to transactions, not todos — do not add todos for them unless explicitly asked.
+- The user may log spending in natural language (e.g. "엄마한테 30만원 계좌이체", "현금 만원 붕어빵") → call add_transaction (resolve relative times like "어제", "오늘 점심" to a KST ISO datetime with +09:00), then confirm in one short line with the assigned #number. Ask only if the amount is missing or ambiguous.
+- Use add_transaction ONLY for a completed past payment with an explicit amount and payee/description. Never for plans, reminders, questions, or hypotheticals ("내일 30만원 보내야 해", "얼마 썼지?") — use add_todo or reply directly instead.
+- A reply to the digest, or any message containing a #number, is a memo/category update (update_transaction_memo), never a new entry.
+- If the method is card, call list_transactions first; if a synced card row already matches (same amount, similar time/merchant), do NOT add it (it would be double-counted) and tell the user it is already recorded with its #number.
+- If add_transaction reports a duplicate, do not retry; tell the user the existing #number.
+- delete_transaction only works for manually added entries; synced card transactions cannot be deleted. Call it only when the user names a #number or asks to undo the entry just added, and always echo the #number in the confirmation.`;
 
 const toolDefinitions: Anthropic.Tool[] = [
   {
@@ -293,6 +303,37 @@ const toolDefinitions: Anthropic.Tool[] = [
         number: { type: "number", description: "Transaction #number" },
         memo: { type: "string", description: "Memo" },
         category: { type: "string", description: "Category (e.g. 식비, 교통, 업무)" },
+      },
+      required: ["number"],
+    },
+  },
+  {
+    name: "add_transaction",
+    description: "Manually log a spending entry not captured by card sync (bank transfer, cash, etc.).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        amount: { type: "number", description: "Amount in KRW (positive integer)" },
+        merchant: { type: "string", description: "Merchant or description (e.g. 엄마 용돈, 붕어빵)" },
+        method: {
+          type: "string",
+          enum: ["transfer", "cash", "card", "other"],
+          description: "Payment method: transfer(계좌이체, default), cash(현금), card, other",
+        },
+        occurred_at: { type: "string", description: "ISO datetime with +09:00 offset (default: now)" },
+        category: { type: "string", description: "Category (e.g. 식비, 가족, 교통)" },
+        memo: { type: "string", description: "Memo" },
+      },
+      required: ["amount", "merchant"],
+    },
+  },
+  {
+    name: "delete_transaction",
+    description: "Delete a manually added transaction by #number. Synced card transactions cannot be deleted.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        number: { type: "number", description: "Transaction #number" },
       },
       required: ["number"],
     },
@@ -838,6 +879,54 @@ async function execUpdateTransactionMemo(userId: string, rawInput: unknown): Pro
   return `Updated: ${formatTransactionLine(updated, { withDate: true })}`;
 }
 
+const addTransactionInput = z.object({
+  amount: z.number().int().min(1).max(2147483647),
+  merchant: z.string().min(1).max(100),
+  method: z.enum(["transfer", "cash", "card", "other"]).optional(),
+  occurred_at: z.string().optional(),
+  category: z.string().max(50).optional(),
+  memo: z.string().max(1000).optional(),
+});
+
+const deleteTransactionInput = z.object({
+  number: z.number().int().min(1),
+});
+
+async function execAddTransaction(userId: string, rawInput: unknown): Promise<string> {
+  const parsed = addTransactionInput.safeParse(rawInput);
+  if (!parsed.success) return invalidInput(parsed.error);
+  const { amount, merchant, method, occurred_at, category, memo } = parsed.data;
+  const occurredAt = occurred_at ? parseIsoWithOffset(occurred_at) : undefined;
+  if (occurredAt === null) return "Invalid occurred_at. Use ISO datetime with +09:00 offset (not in the future, not before 2000).";
+  const result = await addManualTransaction(userId, { amount, merchant, method, occurredAt, category, memo });
+  if (!result.ok) {
+    return `Duplicate: not added. Same amount and merchant within 1 minute already exists: ${formatTransactionLine(result.existing, { withDate: true })}`;
+  }
+  return `Added: ${formatTransactionLine(result.tx, { withDate: true })}`;
+}
+
+async function execDeleteTransaction(userId: string, rawInput: unknown): Promise<string> {
+  const parsed = deleteTransactionInput.safeParse(rawInput);
+  if (!parsed.success) return invalidInput(parsed.error);
+  const result = await deleteManualTransaction(userId, parsed.data.number);
+  if (!result.ok) {
+    return result.reason === "not_found"
+      ? `Transaction #${parsed.data.number} not found.`
+      : `Transaction #${parsed.data.number} is a synced card transaction and cannot be deleted (the Mac sync would re-create it). Suggest adding a memo instead.`;
+  }
+  return `Deleted: ${formatTransactionLine(result.tx, { withDate: true })}`;
+}
+
+/** Ledger tools return errors as strings so a DB failure is reported to the model instead of aborting the turn. */
+async function safeLedgerTool(run: () => Promise<string>): Promise<string> {
+  try {
+    return await run();
+  } catch (error) {
+    console.error("[AGENT] ledger tool failed:", error);
+    return `Error: ${error instanceof Error ? error.message : "unknown error"}`;
+  }
+}
+
 // --- Tool dispatcher ---
 
 async function executeTool(
@@ -889,11 +978,15 @@ async function executeTool(
         number?: number; keyword?: string; priority?: string; deadline?: string;
       });
     case "list_transactions":
-      return execListTransactions(userId, toolInput);
+      return safeLedgerTool(() => execListTransactions(userId, toolInput));
     case "spending_summary":
-      return execSpendingSummary(userId, toolInput);
+      return safeLedgerTool(() => execSpendingSummary(userId, toolInput));
     case "update_transaction_memo":
-      return execUpdateTransactionMemo(userId, toolInput);
+      return safeLedgerTool(() => execUpdateTransactionMemo(userId, toolInput));
+    case "add_transaction":
+      return safeLedgerTool(() => execAddTransaction(userId, toolInput));
+    case "delete_transaction":
+      return safeLedgerTool(() => execDeleteTransaction(userId, toolInput));
     default:
       return `Unknown tool: ${toolName}`;
   }
@@ -1026,7 +1119,7 @@ export async function runAgent(
 
   const systemPrompt = `${SYSTEM_PROMPT}
 
-Today: ${today}
+Today: ${today} (now ${kstTimeString(new Date())} KST)
 
 Registered projects:
 ${projectContext || "None"}`;

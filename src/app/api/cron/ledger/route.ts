@@ -12,10 +12,12 @@ import {
   kstDateString,
   kstDayOfMonth,
   kstMonthString,
+  kstMonthToDateRanges,
   kstYesterdayRange,
   previousMonth,
   sumNet,
   summarizeMonth,
+  summarizeRange,
 } from "@/lib/ledger";
 
 const SYNC_STALE_MS = 48 * 60 * 60 * 1000;
@@ -65,27 +67,49 @@ function chunkText(text: string): string[] {
   return chunks;
 }
 
+/** Month-to-date line, or null when nothing has been spent this month (avoids an empty "0원" digest). */
+async function buildMonthToDateLine(userId: string, now: Date): Promise<string | null> {
+  const ranges = kstMonthToDateRanges(now);
+  const [current, previous] = await Promise.all([
+    summarizeRange(userId, ranges.current),
+    summarizeRange(userId, ranges.previous),
+  ]);
+  if (current.count === 0 && current.total === 0) return null;
+  let comparison = "";
+  if (previous.total > 0) {
+    const pct = Math.round(((current.total - previous.total) / previous.total) * 100);
+    comparison = ` · 지난달 같은 기간 대비 ${pct > 0 ? "+" : ""}${pct}%`;
+  }
+  return `이번 달 누적 ${formatWon(current.total)} (${current.count}건)${comparison}`;
+}
+
 async function buildSections(user: LedgerUser, now: Date): Promise<string[]> {
   const sections: string[] = [];
 
-  // a. Yesterday's transactions
+  const isFirstOfMonth = kstDayOfMonth(now) === 1;
+
+  // a. Yesterday's transactions + month-to-date total (skipped on the 1st, when the monthly report covers it)
   const yesterday = kstYesterdayRange(now);
   const rows = await getTransactionsInRange(user.id, yesterday);
+  const label = kstDateString(yesterday.start).slice(5).replace("-", "/");
+  const monthToDate = isFirstOfMonth ? null : await buildMonthToDateLine(user.id, now);
   if (rows.length > 0) {
-    const label = kstDateString(yesterday.start).slice(5).replace("-", "/");
     sections.push([
-      `📒 어제(${label}) 카드 사용 내역`,
+      `📒 어제(${label}) 사용 내역`,
       "",
       ...rows.map((tx) => formatTransactionLine(tx)),
       "",
       `합계: ${formatWon(sumNet(rows))}`,
+      ...(monthToDate ? [monthToDate] : []),
       "",
       "메모할 게 있으면 '#12 사무실 비품'처럼 답장 주세요.",
     ].join("\n"));
+  } else if (monthToDate) {
+    sections.push(`📒 어제(${label}) 사용 내역 없음\n${monthToDate}`);
   }
 
   // b. Monthly report on the 1st (KST)
-  if (kstDayOfMonth(now) === 1) {
+  if (isFirstOfMonth) {
     const month = previousMonth(kstMonthString(now));
     const summary = await summarizeMonth(user.id, month);
     sections.push(`📊 ${month} 월간 지출 리포트\n\n${formatMonthSummary(summary)}`);

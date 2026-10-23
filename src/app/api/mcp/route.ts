@@ -12,6 +12,9 @@ import {
   listTransactions,
   summarizeMonth,
   updateTransactionMemo,
+  addManualTransaction,
+  deleteManualTransaction,
+  parseIsoWithOffset,
 } from "@/lib/ledger";
 
 function createServer(userId: string) {
@@ -851,14 +854,72 @@ function createServer(userId: string) {
     },
     async ({ number, memo, category }) => {
       if (memo === undefined && category === undefined) {
-        return { content: [{ type: "text" as const, text: "Provide memo or category." }] };
+        return { content: [{ type: "text" as const, text: "Provide memo or category." }], isError: true };
       }
       const updated = await updateTransactionMemo(userId, number, { memo, category });
       if (!updated) {
-        return { content: [{ type: "text" as const, text: `Transaction #${number} not found.` }] };
+        return { content: [{ type: "text" as const, text: `Transaction #${number} not found.` }], isError: true };
       }
       return {
         content: [{ type: "text" as const, text: `📝 Updated: ${formatTransactionLine(updated, { withDate: true })}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "add_transaction",
+    {
+      title: "Add Transaction",
+      description: "Manually log a spending entry not captured by card sync (bank transfer, cash, etc.).",
+      inputSchema: {
+        amount: z.number().int().min(1).max(2147483647).describe("Amount in KRW"),
+        merchant: z.string().min(1).max(100).describe("Merchant or description (e.g. 엄마 용돈, 붕어빵)"),
+        method: z.enum(["transfer", "cash", "card", "other"]).optional().describe("Payment method (default: transfer)"),
+        occurredAt: z.string().optional().describe("ISO datetime with offset, e.g. 2026-10-22T12:30:00+09:00 (default: now)"),
+        category: z.string().max(50).optional().describe("Category"),
+        memo: z.string().max(1000).optional().describe("Memo"),
+      },
+    },
+    async ({ amount, merchant, method, occurredAt, category, memo }) => {
+      const date = occurredAt ? parseIsoWithOffset(occurredAt) : undefined;
+      if (date === null) {
+        return {
+          content: [{ type: "text" as const, text: "Invalid occurredAt. Use ISO datetime with offset (e.g. +09:00), not in the future and not before 2000." }],
+          isError: true,
+        };
+      }
+      const result = await addManualTransaction(userId, { amount, merchant, method, occurredAt: date, category, memo });
+      if (!result.ok) {
+        return {
+          content: [{ type: "text" as const, text: `Duplicate, not added. Already exists: ${formatTransactionLine(result.existing, { withDate: true })}` }],
+          isError: true,
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: `➕ Added: ${formatTransactionLine(result.tx, { withDate: true })}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "delete_transaction",
+    {
+      title: "Delete Transaction",
+      description: "Delete a manually entered transaction by #number. Synced card transactions cannot be deleted.",
+      inputSchema: {
+        number: z.number().int().min(1).describe("Transaction #number"),
+      },
+    },
+    async ({ number }) => {
+      const result = await deleteManualTransaction(userId, number);
+      if (!result.ok) {
+        const text = result.reason === "not_found"
+          ? `Transaction #${number} not found.`
+          : `Transaction #${number} is a synced card transaction and cannot be deleted (the Mac sync would re-create it). Add a memo instead.`;
+        return { content: [{ type: "text" as const, text }], isError: true };
+      }
+      return {
+        content: [{ type: "text" as const, text: `🗑 Deleted: ${formatTransactionLine(result.tx, { withDate: true })}` }],
       };
     }
   );

@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { transactions } from "./db/schema";
-import { eq, and, gte, lt, desc, asc } from "drizzle-orm";
+import { transactions, users } from "./db/schema";
+import { eq, and, gte, lt, lte, desc, asc, sql } from "drizzle-orm";
 
 // --- KST date helpers ---
 
@@ -63,6 +63,36 @@ export function previousMonth(month: string): string {
   return new Date(Date.UTC(year, mon - 2, 1)).toISOString().slice(0, 7);
 }
 
+/**
+ * Month-to-date range (KST) and the same elapsed span of the previous month,
+ * clamped to the previous month's end (e.g. Mar 31 compares against all of Feb).
+ */
+export function kstMonthToDateRanges(now: Date = new Date()): { current: DateRange; previous: DateRange } {
+  const month = kstMonthString(now);
+  const currentStart = kstMonthRange(month).start;
+  const prev = kstMonthRange(previousMonth(month));
+  const elapsed = now.getTime() - currentStart.getTime();
+  return {
+    current: { start: currentStart, end: now },
+    previous: { start: prev.start, end: new Date(Math.min(prev.start.getTime() + elapsed, prev.end.getTime())) },
+  };
+}
+
+const ISO_WITH_OFFSET_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?(Z|[+-]\d{2}:\d{2})$/;
+const MIN_OCCURRED_AT = Date.UTC(2000, 0, 1);
+
+/**
+ * Parse a user/LLM-supplied ISO datetime with an explicit offset (so server-local time is never assumed).
+ * Returns null if malformed or outside a sane range (before 2000-01-01 or more than a day in the future).
+ */
+export function parseIsoWithOffset(value: string): Date | null {
+  if (!ISO_WITH_OFFSET_RE.test(value)) return null;
+  const date = new Date(value);
+  const time = date.getTime();
+  if (isNaN(time) || time < MIN_OCCURRED_AT || time > Date.now() + DAY_MS) return null;
+  return date;
+}
+
 // --- Queries ---
 
 export type Transaction = typeof transactions.$inferSelect;
@@ -111,6 +141,108 @@ export async function updateTransactionMemo(
     .where(and(eq(transactions.userId, userId), eq(transactions.number, number)))
     .returning();
   return updated ?? null;
+}
+
+/**
+ * Atomically reserve `count` per-user transaction numbers via users.ledger_seq
+ * (single statement, safe under concurrency on neon-http). Returns the first reserved number.
+ */
+export async function reserveTransactionNumbers(userId: string, count: number): Promise<number> {
+  const [reserved] = await db
+    .update(users)
+    .set({ ledgerSeq: sql`${users.ledgerSeq} + ${count}` })
+    .where(eq(users.id, userId))
+    .returning({ seq: users.ledgerSeq });
+  if (!reserved) throw new Error("User not found");
+  return reserved.seq - count + 1;
+}
+
+// --- Manual entries ---
+
+export const MANUAL_CARD_ORG = "manual";
+
+const DUPLICATE_WINDOW_MS = 60 * 1000;
+
+export const MANUAL_METHOD_LABELS = {
+  transfer: "계좌이체",
+  cash: "현금",
+  card: "카드",
+  other: "기타",
+} as const;
+
+export type ManualMethod = keyof typeof MANUAL_METHOD_LABELS;
+
+export async function addManualTransaction(
+  userId: string,
+  input: {
+    amount: number;
+    merchant: string;
+    method?: ManualMethod;
+    occurredAt?: Date;
+    category?: string | null;
+    memo?: string | null;
+  }
+): Promise<{ ok: true; tx: Transaction } | { ok: false; reason: "duplicate"; existing: Transaction }> {
+  const occurredAt = input.occurredAt ?? new Date();
+
+  // Duplicate guard: same amount + merchant within ±1 minute is almost certainly a repeated entry
+  const [existing] = await db
+    .select()
+    .from(transactions)
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.amount, input.amount),
+      eq(transactions.merchant, input.merchant),
+      gte(transactions.occurredAt, new Date(occurredAt.getTime() - DUPLICATE_WINDOW_MS)),
+      lte(transactions.occurredAt, new Date(occurredAt.getTime() + DUPLICATE_WINDOW_MS)),
+    ))
+    .limit(1);
+  if (existing) return { ok: false, reason: "duplicate", existing };
+
+  const number = await reserveTransactionNumbers(userId, 1);
+  const [created] = await db
+    .insert(transactions)
+    .values({
+      userId,
+      number,
+      occurredAt,
+      amount: input.amount,
+      currency: "KRW",
+      merchant: input.merchant,
+      cardOrg: MANUAL_CARD_ORG,
+      cardName: MANUAL_METHOD_LABELS[input.method ?? "transfer"],
+      installmentMonths: 0,
+      status: "approved",
+      category: input.category ?? null,
+      memo: input.memo ?? null,
+      externalId: `manual:${crypto.randomUUID()}`,
+    })
+    .returning();
+  return { ok: true, tx: created };
+}
+
+/** Delete a manually entered transaction. Synced card rows cannot be deleted (the Mac sync would re-create them). */
+export async function deleteManualTransaction(
+  userId: string,
+  number: number
+): Promise<{ ok: true; tx: Transaction } | { ok: false; reason: "not_found" | "not_manual" }> {
+  const [deleted] = await db
+    .delete(transactions)
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.number, number),
+      eq(transactions.cardOrg, MANUAL_CARD_ORG),
+    ))
+    .returning();
+  if (deleted) return { ok: true, tx: deleted };
+
+  // Nothing deleted: distinguish a missing row from a synced (non-manual) one
+  const [row] = await db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.number, number)))
+    .limit(1);
+  return { ok: false, reason: row ? "not_manual" : "not_found" };
 }
 
 // --- Summary ---
@@ -162,6 +294,16 @@ function bucketize(rows: Transaction[], keyOf: (tx: Transaction) => string): Sum
 
 export function sumNet(rows: Transaction[]): number {
   return rows.reduce((acc, tx) => acc + signedAmount(tx), 0);
+}
+
+export function approvedCount(rows: Transaction[]): number {
+  return rows.filter((tx) => tx.status === "approved").length;
+}
+
+/** Net total and approved count for an arbitrary range. */
+export async function summarizeRange(userId: string, range: DateRange): Promise<{ total: number; count: number }> {
+  const rows = await getTransactionsInRange(userId, range);
+  return { total: sumNet(rows), count: approvedCount(rows) };
 }
 
 export async function summarizeMonth(userId: string, month: string): Promise<MonthSummary> {

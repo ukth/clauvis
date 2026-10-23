@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { transactions, users } from "@/lib/db/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { getUserId } from "@/lib/auth";
-import { isValidMonth, kstMonthString, listTransactions } from "@/lib/ledger";
+import { isValidMonth, kstMonthString, listTransactions, MANUAL_CARD_ORG, reserveTransactionNumbers } from "@/lib/ledger";
 
 const MAX_BATCH = 500;
 
@@ -15,7 +15,13 @@ const itemSchema = z.object({
 });
 
 const txSchema = z.object({
-  externalId: z.string().min(1).max(200),
+  // "manual:" ids and cardOrg "manual" are reserved for Telegram/MCP entries (deletable);
+  // synced rows must not be able to claim or overwrite them.
+  externalId: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine((v) => !v.startsWith("manual:"), "externalId prefix 'manual:' is reserved"),
   occurredAt: z.coerce.date(),
   amount: z.number().int().min(-2147483648).max(2147483647).nullable().optional(),
   currency: z.string().min(1).max(10).optional(),
@@ -25,7 +31,11 @@ const txSchema = z.object({
     .optional()
     .transform((v) => (v == null ? null : String(v))),
   merchant: z.string().min(1).max(200),
-  cardOrg: z.string().min(1).max(50),
+  cardOrg: z
+    .string()
+    .min(1)
+    .max(50)
+    .refine((v) => v !== MANUAL_CARD_ORG, "cardOrg 'manual' is reserved"),
   cardName: z.string().max(100).nullable().optional(),
   installmentMonths: z.number().int().min(0).max(60).optional(),
   status: z.enum(["approved", "cancelled", "declined"]).optional(),
@@ -99,15 +109,7 @@ export async function POST(request: NextRequest) {
     // Reserve #numbers for new rows atomically via users.ledger_seq (single statement, safe under concurrent POSTs).
     // transactions is a new table, so ledger_seq starting at 0 needs no backfill.
     const newCount = incoming.filter((tx) => !existingIds.has(tx.externalId)).length;
-    let nextNumber = 0;
-    if (newCount > 0) {
-      const [reserved] = await db
-        .update(users)
-        .set({ ledgerSeq: sql`${users.ledgerSeq} + ${newCount}` })
-        .where(eq(users.id, userId))
-        .returning({ seq: users.ledgerSeq });
-      nextNumber = reserved.seq - newCount + 1;
-    }
+    let nextNumber = newCount > 0 ? await reserveTransactionNumbers(userId, newCount) : 0;
     const now = new Date();
     const values = incoming.map((tx) => ({
       userId,

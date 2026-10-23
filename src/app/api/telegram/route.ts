@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -14,6 +14,9 @@ import {
   splitForTelegram,
 } from "@/lib/telegram";
 import { runAgent } from "@/lib/agent";
+
+// Agent replies (up to 4096 tokens, several tool calls) can take well over 30s
+export const maxDuration = 300;
 import { isCommand, handleCommand } from "@/lib/commands";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { randomBytes } from "crypto";
@@ -267,33 +270,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  try {
-    // Show typing indicator
-    await sendTyping(chatId);
+  // Reply to Telegram immediately and run the agent after the response. Long generations
+  // otherwise exceed the function timeout, and Telegram re-delivers the same update on
+  // timeouts, re-running (and re-billing) the agent each time.
+  after(async () => {
+    try {
+      // Show typing indicator
+      await sendTyping(chatId);
 
-    // Run the agent with user's API key (messages are saved inside runAgent)
-    const apiKey = decrypt(encryptedKey);
-    const response = await runAgent(text, user.id, apiKey, user.model);
+      // Run the agent with user's API key (messages are saved inside runAgent)
+      const apiKey = decrypt(encryptedKey);
+      const response = await runAgent(text, user.id, apiKey, user.model);
 
-    // Agent writes Markdown; send as escaped Telegram HTML so special chars never break parsing.
-    // Split the Markdown first (HTML escaping can lengthen it), one message per chunk.
-    for (const chunk of splitForTelegram(response, 3500)) {
-      await sendMessage(chatId, markdownToTelegramHtml(chunk), "HTML");
+      // Agent writes Markdown; send as escaped Telegram HTML so special chars never break parsing.
+      // Split the Markdown first (HTML escaping can lengthen it), one message per chunk.
+      for (const chunk of splitForTelegram(response, 3500)) {
+        await sendMessage(chatId, markdownToTelegramHtml(chunk), "HTML");
+      }
+    } catch (error) {
+      console.error("Error processing message:", error);
+      if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 401) {
+        await sendMessage(
+          chatId,
+          "🔑 Your Anthropic API key is invalid or has been revoked.\n\nPlease re-register it with /setkey sk-ant-...",
+          false
+        );
+      } else {
+        const status = error && typeof error === "object" && "status" in error ? (error as { status: number }).status : undefined;
+        const code = status ? ` [${status}]` : "";
+        await sendMessage(chatId, esc(`Something went wrong${code}. Please try again.`));
+      }
     }
-  } catch (error) {
-    console.error("Error processing message:", error);
-    if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 401) {
-      await sendMessage(
-        chatId,
-        "🔑 Your Anthropic API key is invalid or has been revoked.\n\nPlease re-register it with /setkey sk-ant-...",
-        false
-      );
-    } else {
-      const status = error && typeof error === "object" && "status" in error ? (error as { status: number }).status : undefined;
-      const code = status ? ` [${status}]` : "";
-      await sendMessage(chatId, esc(`Something went wrong${code}. Please try again.`));
-    }
-  }
+  });
 
   return NextResponse.json({ ok: true });
 }

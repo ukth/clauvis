@@ -145,7 +145,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  console.log(`[TELEGRAM] message_id=${message.message_id} chat=${message.chat.id} text="${(message.text || "").substring(0, 50)}"`);
+  // Mask API keys so /setkey payloads never reach logs
+  const loggedText = message.text.replace(/sk-ant-\S+/g, "sk-ant-[REDACTED]").substring(0, 50);
+  console.log(`[TELEGRAM] message_id=${message.message_id} chat=${message.chat.id} text="${loggedText}"`);
 
   const chatId = message.chat.id;
   const text = message.text.trim();

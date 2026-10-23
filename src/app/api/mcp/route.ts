@@ -14,6 +14,8 @@ import {
   updateTransactionMemo,
   addManualTransaction,
   deleteManualTransaction,
+  excludeTransaction,
+  includeTransaction,
   parseIsoWithOffset,
 } from "@/lib/ledger";
 
@@ -920,6 +922,47 @@ function createServer(userId: string) {
       }
       return {
         content: [{ type: "text" as const, text: `🗑 Deleted: ${formatTransactionLine(result.tx, { withDate: true })}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "exclude_transaction",
+    {
+      title: "Exclude Transaction",
+      description: "Exclude a transaction from all totals. Survives card sync; reversible with include_transaction.",
+      inputSchema: {
+        number: z.number().int().min(1).describe("Transaction #number"),
+        reason: z.string().max(200).optional().describe("Why it is excluded"),
+      },
+    },
+    async ({ number, reason }) => {
+      const updated = await excludeTransaction(userId, number, reason);
+      if (!updated) {
+        return { content: [{ type: "text" as const, text: `Transaction #${number} not found.` }], isError: true };
+      }
+      return {
+        content: [{ type: "text" as const, text: `🚫 Excluded: ${formatTransactionLine(updated, { withDate: true })}` }],
+      };
+    }
+  );
+
+  server.registerTool(
+    "include_transaction",
+    {
+      title: "Include Transaction",
+      description: "Restore a previously excluded transaction so it counts in totals again.",
+      inputSchema: {
+        number: z.number().int().min(1).describe("Transaction #number"),
+      },
+    },
+    async ({ number }) => {
+      const updated = await includeTransaction(userId, number);
+      if (!updated) {
+        return { content: [{ type: "text" as const, text: `Transaction #${number} not found.` }], isError: true };
+      }
+      return {
+        content: [{ type: "text" as const, text: `✅ Included: ${formatTransactionLine(updated, { withDate: true })}` }],
       };
     }
   );

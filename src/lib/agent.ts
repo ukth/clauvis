@@ -18,6 +18,8 @@ import {
   updateTransactionMemo,
   addManualTransaction,
   deleteManualTransaction,
+  excludeTransaction,
+  includeTransaction,
 } from "./ledger";
 
 const SYSTEM_PROMPT = `You are Clauvis, a todo and idea management assistant. Use the appropriate tools based on the user's message, or respond directly for casual conversation.
@@ -55,7 +57,10 @@ Spending ledger:
 - A reply to the digest, or any message containing a #number, is a memo/category update (update_transaction_memo), never a new entry.
 - If the method is card, call list_transactions first; if a synced card row already matches (same amount, similar time/merchant), do NOT add it (it would be double-counted) and tell the user it is already recorded with its #number.
 - If add_transaction reports a duplicate, do not retry; tell the user the existing #number.
-- delete_transaction only works for manually added entries; synced card transactions cannot be deleted. Call it only when the user names a #number or asks to undo the entry just added, and always echo the #number in the confirmation.`;
+- delete_transaction only works for manually added entries; synced card transactions cannot be deleted. Call it only when the user names a #number or asks to undo the entry just added, and always echo the #number in the confirmation.
+- When the user asks to cancel/delete/remove a transaction: manual entries → delete_transaction; card rows (or if delete_transaction says it is a synced card transaction) → exclude_transaction, then say it was excluded from totals and can be restored. "다시 넣어줘"/"복구" → include_transaction. Always echo the #number.
+- Never exclude without an explicit #number, unless you yourself echoed that exact #number in your immediately previous message and the user is clearly referring to it; otherwise ask which #number.
+- If the user says a card payment was actually cancelled at the store/card company, tell them the card company's cancellation SMS will offset it automatically after the next Mac sync, so excluding is usually unnecessary (excluding as well would double-subtract).`;
 
 const toolDefinitions: Anthropic.Tool[] = [
   {
@@ -330,6 +335,29 @@ const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "delete_transaction",
     description: "Delete a manually added transaction by #number. Synced card transactions cannot be deleted.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        number: { type: "number", description: "Transaction #number" },
+      },
+      required: ["number"],
+    },
+  },
+  {
+    name: "exclude_transaction",
+    description: "Exclude a transaction from all totals (e.g. a card charge the user wants ignored). Survives card sync; reversible with include_transaction.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        number: { type: "number", description: "Transaction #number" },
+        reason: { type: "string", description: "Why it is excluded (optional, ≤200 chars)" },
+      },
+      required: ["number"],
+    },
+  },
+  {
+    name: "include_transaction",
+    description: "Restore a previously excluded transaction so it counts in totals again.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -917,6 +945,31 @@ async function execDeleteTransaction(userId: string, rawInput: unknown): Promise
   return `Deleted: ${formatTransactionLine(result.tx, { withDate: true })}`;
 }
 
+const excludeTransactionInput = z.object({
+  number: z.number().int().min(1),
+  reason: z.string().max(200).optional(),
+});
+
+const includeTransactionInput = z.object({
+  number: z.number().int().min(1),
+});
+
+async function execExcludeTransaction(userId: string, rawInput: unknown): Promise<string> {
+  const parsed = excludeTransactionInput.safeParse(rawInput);
+  if (!parsed.success) return invalidInput(parsed.error);
+  const updated = await excludeTransaction(userId, parsed.data.number, parsed.data.reason);
+  if (!updated) return `Transaction #${parsed.data.number} not found.`;
+  return `Excluded from totals (restorable with include_transaction): ${formatTransactionLine(updated, { withDate: true })}`;
+}
+
+async function execIncludeTransaction(userId: string, rawInput: unknown): Promise<string> {
+  const parsed = includeTransactionInput.safeParse(rawInput);
+  if (!parsed.success) return invalidInput(parsed.error);
+  const updated = await includeTransaction(userId, parsed.data.number);
+  if (!updated) return `Transaction #${parsed.data.number} not found.`;
+  return `Included in totals again: ${formatTransactionLine(updated, { withDate: true })}`;
+}
+
 /** Ledger tools return errors as strings so a DB failure is reported to the model instead of aborting the turn. */
 async function safeLedgerTool(run: () => Promise<string>): Promise<string> {
   try {
@@ -987,6 +1040,10 @@ async function executeTool(
       return safeLedgerTool(() => execAddTransaction(userId, toolInput));
     case "delete_transaction":
       return safeLedgerTool(() => execDeleteTransaction(userId, toolInput));
+    case "exclude_transaction":
+      return safeLedgerTool(() => execExcludeTransaction(userId, toolInput));
+    case "include_transaction":
+      return safeLedgerTool(() => execIncludeTransaction(userId, toolInput));
     default:
       return `Unknown tool: ${toolName}`;
   }

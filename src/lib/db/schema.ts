@@ -114,6 +114,9 @@ export const transactions = pgTable("transactions", {
   category: text("category"),
   items: jsonb("items").$type<TransactionItem[]>(),
   memo: text("memo"),
+  // User-controlled exclusion from totals; never touched by the sync upsert so it survives re-sync
+  excludedAt: timestamp("excluded_at", { withTimezone: true }),
+  excludeReason: text("exclude_reason"),
   externalId: text("external_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

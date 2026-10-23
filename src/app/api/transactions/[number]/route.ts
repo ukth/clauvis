@@ -7,9 +7,14 @@ const patchSchema = z
   .object({
     memo: z.string().max(1000).nullable().optional(),
     category: z.string().max(50).nullable().optional(),
+    excluded: z.boolean().optional(),
+    excludeReason: z.string().max(200).nullable().optional(),
   })
-  .refine((v) => v.memo !== undefined || v.category !== undefined, {
-    message: "memo or category is required",
+  .refine((v) => v.memo !== undefined || v.category !== undefined || v.excluded !== undefined, {
+    message: "memo, category, or excluded is required",
+  })
+  .refine((v) => v.excludeReason === undefined || v.excluded === true, {
+    message: "excludeReason requires excluded: true",
   });
 
 export async function PATCH(

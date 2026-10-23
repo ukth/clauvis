@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { transactions, users } from "./db/schema";
 import { eq, and, gte, lt, lte, desc, asc, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 
 // --- KST date helpers ---
 
@@ -129,11 +130,20 @@ export async function listTransactions(
 export async function updateTransactionMemo(
   userId: string,
   number: number,
-  input: { memo?: string | null; category?: string | null }
+  input: { memo?: string | null; category?: string | null; excluded?: boolean; excludeReason?: string | null }
 ): Promise<Transaction | null> {
-  const updateData: { memo?: string | null; category?: string | null; updatedAt: Date } = { updatedAt: new Date() };
+  const updateData: PgUpdateSetSource<typeof transactions> = { updatedAt: new Date() };
   if (input.memo !== undefined) updateData.memo = input.memo;
   if (input.category !== undefined) updateData.category = input.category;
+  if (input.excluded === true) {
+    // Keep the original exclusion time if already excluded
+    updateData.excludedAt = sql`coalesce(${transactions.excludedAt}, now())`;
+    // Re-excluding without a reason keeps the existing one
+    if (input.excludeReason) updateData.excludeReason = input.excludeReason;
+  } else if (input.excluded === false) {
+    updateData.excludedAt = null;
+    updateData.excludeReason = null;
+  }
 
   const [updated] = await db
     .update(transactions)
@@ -141,6 +151,16 @@ export async function updateTransactionMemo(
     .where(and(eq(transactions.userId, userId), eq(transactions.number, number)))
     .returning();
   return updated ?? null;
+}
+
+/** Exclude a transaction from all totals (survives sync). Returns null if not found. */
+export async function excludeTransaction(userId: string, number: number, reason?: string | null): Promise<Transaction | null> {
+  return updateTransactionMemo(userId, number, { excluded: true, excludeReason: reason ?? null });
+}
+
+/** Undo an exclusion. Returns null if not found. */
+export async function includeTransaction(userId: string, number: number): Promise<Transaction | null> {
+  return updateTransactionMemo(userId, number, { excluded: false });
 }
 
 /**
@@ -263,9 +283,13 @@ export type MonthSummary = {
   changePct: number | null;
 };
 
-/** Signed KRW contribution of a transaction: approved adds, cancelled subtracts, declined/unknown ignored. */
+export function isExcluded(tx: Transaction): boolean {
+  return tx.excludedAt != null;
+}
+
+/** Signed KRW contribution of a transaction: approved adds, cancelled subtracts; declined, unknown, and user-excluded rows count 0. */
 export function signedAmount(tx: Transaction): number {
-  if (tx.amount == null) return 0;
+  if (tx.amount == null || isExcluded(tx)) return 0;
   if (tx.status === "approved") return Math.abs(tx.amount);
   if (tx.status === "cancelled") return -Math.abs(tx.amount);
   return 0;
@@ -286,7 +310,7 @@ function bucketize(rows: Transaction[], keyOf: (tx: Transaction) => string): Sum
     const key = keyOf(tx);
     const bucket = map.get(key) ?? { key, total: 0, count: 0 };
     bucket.total += signedAmount(tx);
-    if (tx.status === "approved") bucket.count += 1;
+    if (tx.status === "approved" && !isExcluded(tx)) bucket.count += 1;
     map.set(key, bucket);
   }
   return [...map.values()].sort((a, b) => b.total - a.total);
@@ -297,7 +321,7 @@ export function sumNet(rows: Transaction[]): number {
 }
 
 export function approvedCount(rows: Transaction[]): number {
-  return rows.filter((tx) => tx.status === "approved").length;
+  return rows.filter((tx) => tx.status === "approved" && !isExcluded(tx)).length;
 }
 
 /** Net total and approved count for an arbitrary range. */
@@ -313,7 +337,7 @@ export async function summarizeMonth(userId: string, month: string): Promise<Mon
     getTransactionsInRange(userId, kstMonthRange(prevMonth)),
   ]);
 
-  const counted = rows.filter((tx) => tx.status === "approved" || tx.status === "cancelled");
+  const counted = rows.filter((tx) => (tx.status === "approved" || tx.status === "cancelled") && !isExcluded(tx));
   const total = sumNet(counted);
   const prevTotal = sumNet(prevRows);
   const shinhanRows = counted.filter(isShinhan);
@@ -354,7 +378,8 @@ export function formatTransactionLine(tx: Transaction, options: { withDate?: boo
   const status = tx.status === "cancelled" ? " ❌취소" : tx.status === "declined" ? " ⛔거절" : "";
   const category = tx.category ? ` {${tx.category}}` : "";
   const memo = tx.memo ? ` — ${tx.memo}` : "";
-  return `#${tx.number} ${when} ${tx.merchant} ${formatTxAmount(tx)}${installment} [${cardLabel(tx)}]${status}${category}${memo}`;
+  const excluded = isExcluded(tx) ? ` (제외${tx.excludeReason ? `: ${tx.excludeReason}` : ""})` : "";
+  return `#${tx.number} ${when} ${tx.merchant} ${formatTxAmount(tx)}${installment} [${cardLabel(tx)}]${status}${excluded}${category}${memo}`;
 }
 
 export function formatMonthSummary(summary: MonthSummary): string {

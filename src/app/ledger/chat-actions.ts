@@ -5,15 +5,15 @@ import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions, users } from "@/lib/db/schema";
 import { decrypt } from "@/lib/crypto";
-import { runAgentDetailed, type LedgerAgentAction } from "@/lib/agent";
+import { runAgentDetailed } from "@/lib/agent";
 import { getLedgerSession } from "@/lib/ledger-auth";
-import { attachmentLabel, findUserTransaction, undoAgentAction, withAttachment, type ChatAttachment } from "@/lib/ledger-chat";
+import { attachmentLabel, findUserTransaction, toActionCard, undoReceipt, withAttachment, type ChatActionCard, type ChatAttachment } from "@/lib/ledger-chat";
 import { kstMonthRange, kstMonthString, kstYesterdayRange } from "@/lib/ledger";
 
 const MAX_MESSAGE = 2000;
 
 export type SendChatResult =
-  | { ok: true; reply: string; actions: LedgerAgentAction[]; attachment: ChatAttachment | null }
+  | { ok: true; reply: string; actions: ChatActionCard[]; attachment: ChatAttachment | null }
   | { ok: false; error: string; needsKey?: boolean };
 
 export async function sendLedgerChat(input: { text: string; attachNumber?: number | null }): Promise<SendChatResult> {
@@ -34,7 +34,12 @@ export async function sendLedgerChat(input: { text: string; attachNumber?: numbe
   try {
     const { reply, actions } = await runAgentDetailed(withAttachment(text, tx), session.userId, decrypt(user.key), user.model);
     if (actions.length) revalidatePath("/ledger", "layout");
-    return { ok: true, reply, actions, attachment: tx ? { number: tx.number, label: attachmentLabel(tx) } : null };
+    return {
+      ok: true,
+      reply,
+      actions: actions.map(({ receiptId, action }) => toActionCard(receiptId, action, false)),
+      attachment: tx ? { number: tx.number, label: attachmentLabel(tx) } : null,
+    };
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error ? (error as { status: number }).status : undefined;
     if (status === 401) return { ok: false, needsKey: true, error: "등록된 Claude API 키가 유효하지 않아요. 텔레그램에서 /setkey 로 다시 등록해 주세요." };
@@ -42,11 +47,11 @@ export async function sendLedgerChat(input: { text: string; attachNumber?: numbe
   }
 }
 
-export async function undoLedgerAction(action: LedgerAgentAction): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function undoLedgerAction(receiptId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await getLedgerSession();
   if (!session) return { ok: false, error: "로그인이 필요해요." };
   try {
-    const result = await undoAgentAction(session.userId, action);
+    const result = await undoReceipt(session.userId, typeof receiptId === "string" ? receiptId : "");
     if (result.ok) revalidatePath("/ledger", "layout");
     return result;
   } catch {

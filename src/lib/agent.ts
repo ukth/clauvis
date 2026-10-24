@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { db } from "./db";
 import { todos, projects, users, chatMessages, ideas, transactions } from "./db/schema";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, ne } from "drizzle-orm";
 import { getNextTodoNumber, getNextIdeaNumber } from "./db/utils";
 import { esc } from "./telegram";
 import {
@@ -1087,7 +1087,8 @@ async function getRecentMessages(
       contentJson: chatMessages.contentJson,
     })
     .from(chatMessages)
-    .where(eq(chatMessages.userId, userId))
+    // Receipts are UI records for the web chat, not conversation turns
+    .where(and(eq(chatMessages.userId, userId), ne(chatMessages.content, LEDGER_RECEIPT)))
     .orderBy(desc(chatMessages.createdAt))
     .limit(limit);
 
@@ -1162,11 +1163,32 @@ export type LedgerTxState = {
   excludeReason: string | null;
 };
 
-/** A ledger change made by the agent during one turn. */
+/**
+ * A ledger change made by the agent during one turn. Stored as a receipt row in chat_messages
+ * (content = LEDGER_RECEIPT) so the web chat can show it later and undo it from server-side state.
+ */
 export type LedgerAgentAction =
   | { kind: "edit"; tool: string; number: number; merchant: string; amount: number | null; before: LedgerTxState; after: LedgerTxState }
   | { kind: "add"; number: number; merchant: string; amount: number | null }
-  | { kind: "delete"; number: number; merchant: string; amount: number | null };
+  // The deleted row is kept so undo can re-insert it with the same #number
+  | { kind: "delete"; number: number; merchant: string; amount: number | null; snapshot: typeof transactions.$inferSelect };
+
+export const LEDGER_RECEIPT = "[ledger-action]";
+export type LedgerReceipt = { kind: "ledger-receipt-v1"; action: LedgerAgentAction; undone: boolean };
+
+/** Persist one receipt per action, after the turn's messages so it renders below the reply. */
+async function saveReceipts(userId: string, actions: LedgerAgentAction[]): Promise<string[]> {
+  const ids: string[] = [];
+  for (const action of actions) {
+    const receipt: LedgerReceipt = { kind: "ledger-receipt-v1", action, undone: false };
+    const [row] = await db
+      .insert(chatMessages)
+      .values({ userId, role: "assistant", content: LEDGER_RECEIPT, contentJson: JSON.stringify(receipt) })
+      .returning({ id: chatMessages.id });
+    ids.push(row.id);
+  }
+  return ids;
+}
 
 const LEDGER_EDIT_TOOLS = new Set(["update_transaction_memo", "exclude_transaction", "include_transaction"]);
 
@@ -1209,7 +1231,7 @@ async function executeToolTracked(
   if (before && number != null) {
     if (name === "delete_transaction") {
       if (!(await readTxState(userId, number))) {
-        actions.push({ kind: "delete", number, merchant: before.row.merchant, amount: before.row.amount });
+        actions.push({ kind: "delete", number, merchant: before.row.merchant, amount: before.row.amount, snapshot: before.row });
       }
     } else {
       const after = await readTxState(userId, number);
@@ -1240,7 +1262,7 @@ export async function runAgentDetailed(
   userId: string,
   anthropicApiKey: string,
   model?: string
-): Promise<{ reply: string; actions: LedgerAgentAction[] }> {
+): Promise<{ reply: string; actions: { receiptId: string; action: LedgerAgentAction }[] }> {
   const actions: LedgerAgentAction[] = [];
   const client = new Anthropic({ apiKey: anthropicApiKey });
   const modelId = MODEL_MAP[model || "sonnet"] || MODEL_MAP.sonnet;
@@ -1330,6 +1352,7 @@ ${projectContext || "None"}`;
 
   // Save all new messages from this interaction
   await saveMessages(userId, messages.slice(newStartIndex));
+  const receiptIds = await saveReceipts(userId, actions);
 
-  return { reply: finalResponse, actions };
+  return { reply: finalResponse, actions: actions.map((action, index) => ({ receiptId: receiptIds[index], action })) };
 }

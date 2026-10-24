@@ -5,13 +5,12 @@ import {
   ArrowTurnDownRightIcon, ArrowUpIcon, ArrowUturnLeftIcon, CheckCircleIcon,
   ClockIcon, MagnifyingGlassIcon, PaperClipIcon, ReceiptPercentIcon, XMarkIcon,
 } from "@heroicons/react/24/outline";
-import type { LedgerAgentAction } from "@/lib/agent";
-import type { ChatAttachment, ChatItem } from "@/lib/ledger-chat";
+import type { ChatActionCard, ChatAttachment, ChatItem } from "@/lib/ledger-chat";
 import { listAttachable, sendLedgerChat, undoLedgerAction, type PickerFilter, type PickerItem } from "../../chat-actions";
 import { BottomSheet } from "../../_components/tx-sheet";
 import { kstDate, kstTime, won } from "../../_components/format";
 
-type Message = ChatItem & { actions?: LedgerAgentAction[]; pending?: boolean; error?: boolean };
+type Message = ChatItem & { pending?: boolean; error?: boolean };
 
 const SUGGESTIONS = ["어제 쓴 거 요약해줘", "계좌이체 추가할게", "분류 틀린 거 찾아줘"];
 
@@ -31,11 +30,12 @@ function AttachmentCard({ attachment, inverted }: { attachment: ChatAttachment; 
   );
 }
 
-function describe(action: LedgerAgentAction): { title: string; detail: string | null } {
+function describe(action: ChatActionCard): { title: string; detail: string | null } {
   const head = `#${action.number} ${action.merchant}`;
   if (action.kind === "add") return { title: `${head} · 추가됨`, detail: null };
   if (action.kind === "delete") return { title: `${head} · 삭제됨`, detail: null };
   const { before, after } = action;
+  if (!before || !after) return { title: `${head} · 수정됨`, detail: null };
   const parts: string[] = [];
   if (before.excluded !== after.excluded) parts.push(after.excluded ? "합계에서 제외" : "합계에 다시 포함");
   if (before.category !== after.category) parts.push(`분류 ${before.category ?? "미분류"} → ${after.category ?? "미분류"}`);
@@ -43,16 +43,16 @@ function describe(action: LedgerAgentAction): { title: string; detail: string | 
   return { title: `${head} · ${after.excluded && !before.excluded ? "제외됨" : "수정됨"}`, detail: parts.join(" · ") || null };
 }
 
-function ActionCard({ action }: { action: LedgerAgentAction }) {
-  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+function ActionCard({ action }: { action: ChatActionCard }) {
+  const [state, setState] = useState<"idle" | "busy" | "done">(action.undone ? "done" : "idle");
   const [error, setError] = useState<string | null>(null);
   const { title, detail } = describe(action);
-  const undoable = action.kind !== "delete";
+  const restoreLabel = action.kind === "delete" ? "되살리기" : "되돌리기";
 
   const undo = async () => {
     setState("busy");
     setError(null);
-    const result = await undoLedgerAction(action).catch(() => null);
+    const result = await undoLedgerAction(action.receiptId).catch(() => null);
     if (result?.ok) setState("done");
     else {
       setState("idle");
@@ -68,21 +68,19 @@ function ActionCard({ action }: { action: LedgerAgentAction }) {
           <span className="truncate">{title}</span>
         </span>
         {action.amount != null ? (
-          <span className={`shrink-0 text-[13px] tabular-nums text-[#8A93AD] ${action.kind === "edit" && action.after.excluded ? "line-through" : ""}`}>
+          <span className={`shrink-0 text-[13px] tabular-nums text-[#8A93AD] ${action.after?.excluded && state !== "done" ? "line-through" : ""}`}>
             -{won(Math.abs(action.amount))}
           </span>
         ) : null}
       </div>
       {detail ? <p className="text-xs text-[#F2A93B]">{detail}</p> : null}
-      {undoable ? (
-        state === "done" ? (
-          <p className="text-xs text-[#8A93AD]">되돌렸어요.</p>
-        ) : (
-          <button type="button" onClick={undo} disabled={state === "busy"} className="flex w-fit items-center gap-1 rounded-lg border border-[#243055] px-2.5 py-1.5 text-xs font-medium disabled:opacity-50">
-            <ArrowUturnLeftIcon aria-hidden="true" className="size-3" /> 되돌리기
-          </button>
-        )
-      ) : null}
+      {state === "done" ? (
+        <p className="text-xs text-[#8A93AD]">{action.kind === "delete" ? "되살렸어요." : "되돌렸어요."}</p>
+      ) : (
+        <button type="button" onClick={undo} disabled={state === "busy"} className="flex w-fit items-center gap-1 rounded-lg border border-[#243055] px-2.5 py-1.5 text-xs font-medium disabled:opacity-50">
+          <ArrowUturnLeftIcon aria-hidden="true" className="size-3" /> {restoreLabel}
+        </button>
+      )}
       {error ? <p role="alert" className="text-xs text-[#F06A6A]">{error}</p> : null}
     </div>
   );
@@ -101,8 +99,8 @@ function Bubble({ message }: { message: Message }) {
   }
   return (
     <div className={`flex max-w-[88%] flex-col gap-2.5 rounded-2xl rounded-bl-[4px] p-3 ${message.error ? "bg-[#F06A6A]/10 text-[#F06A6A]" : "bg-[#121A30]"}`}>
-      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.text}</p>
-      {message.actions?.map((action, index) => <ActionCard key={index} action={action} />)}
+      {message.text ? <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.text}</p> : null}
+      {message.actions?.map((action) => <ActionCard key={action.receiptId} action={action} />)}
     </div>
   );
 }

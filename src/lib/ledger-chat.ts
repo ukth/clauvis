@@ -3,8 +3,8 @@ import "server-only";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./db";
 import { chatMessages, transactions, type CategorySource } from "./db/schema";
-import type { LedgerAgentAction, LedgerTxState } from "./agent";
-import { deleteManualTransaction, formatWon, isCategory, kstDateString, kstTimeString, MANUAL_CARD_ORG, type Transaction } from "./ledger";
+import { LEDGER_RECEIPT, type LedgerAgentAction, type LedgerReceipt, type LedgerTxState } from "./agent";
+import { deleteManualTransaction, formatWon, kstDateString, kstTimeString, MANUAL_CARD_ORG, type Transaction } from "./ledger";
 
 // Web chat helpers: the chat shares chat_messages with the Telegram bot. An attached transaction
 // travels as a first-line tag so both the agent and a later history render can see it.
@@ -12,7 +12,7 @@ import { deleteManualTransaction, formatWon, isCategory, kstDateString, kstTimeS
 const ATTACH_TAG = /^\[첨부 #(\d+) ([^\]\n]{1,200})\]\n?/;
 
 export type ChatAttachment = { number: number; label: string };
-export type ChatItem = { id: string; role: "user" | "assistant"; text: string; attachment: ChatAttachment | null; createdAt: string };
+export type ChatItem = { id: string; role: "user" | "assistant"; text: string; attachment: ChatAttachment | null; createdAt: string; actions?: ChatActionCard[] };
 
 /** "쿠팡 · -3,700원 · KB 쿠팡와우 · 10/24 14:59" */
 export function attachmentLabel(tx: Transaction): string {
@@ -62,6 +62,16 @@ export async function loadChatHistory(userId: string, limit = 40): Promise<ChatI
 
   const items: ChatItem[] = [];
   for (const row of rows.reverse()) {
+    if (row.content === LEDGER_RECEIPT) {
+      const receipt = parseReceipt(row.contentJson);
+      if (!receipt) continue;
+      const card = toActionCard(row.id, receipt.action, receipt.undone);
+      // Receipts follow the reply that produced them; show them as cards under it
+      const last = items[items.length - 1];
+      if (last?.role === "assistant") last.actions = [...(last.actions ?? []), card];
+      else items.push({ id: row.id, role: "assistant", text: "", attachment: null, createdAt: row.createdAt.toISOString(), actions: [card] });
+      continue;
+    }
     const raw = displayText(row.content, row.contentJson);
     if (!raw) continue;
     const { text, attachment } = row.role === "user" ? parseAttachment(raw) : { text: raw, attachment: null };
@@ -77,36 +87,73 @@ export async function findUserTransaction(userId: string, number: number): Promi
   return row ?? null;
 }
 
-// --- Undo ---
+// --- Receipts & undo ---
 
-const SOURCES = new Set(["rule", "ai", "user"]);
+/** What the client sees of a receipt (no stored row snapshot). */
+export type ChatActionCard = {
+  receiptId: string;
+  undone: boolean;
+  kind: LedgerAgentAction["kind"];
+  number: number;
+  merchant: string;
+  amount: number | null;
+  before: LedgerTxState | null;
+  after: LedgerTxState | null;
+};
 
-function validState(state: LedgerTxState): boolean {
-  return (state.category === null || isCategory(state.category))
-    && (state.categorySource === null || SOURCES.has(state.categorySource))
-    && (state.memo === null || (typeof state.memo === "string" && state.memo.length <= 1000))
-    && typeof state.excluded === "boolean"
-    && (state.excludeReason === null || (typeof state.excludeReason === "string" && state.excludeReason.length <= 200));
+export function toActionCard(receiptId: string, action: LedgerAgentAction, undone: boolean): ChatActionCard {
+  return {
+    receiptId,
+    undone,
+    kind: action.kind,
+    number: action.number,
+    merchant: action.merchant,
+    amount: action.amount,
+    before: action.kind === "edit" ? action.before : null,
+    after: action.kind === "edit" ? action.after : null,
+  };
+}
+
+function parseReceipt(contentJson: string | null): LedgerReceipt | null {
+  if (!contentJson) return null;
+  try {
+    const parsed = JSON.parse(contentJson) as LedgerReceipt;
+    return parsed?.kind === "ledger-receipt-v1" && parsed.action ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export type UndoResult = { ok: true } | { ok: false; error: string };
 
-/**
- * Revert an agent change. Edits are restored only if the row still looks exactly like the agent
- * left it (single conditional UPDATE), so a later manual edit is never silently overwritten.
- */
-export async function undoAgentAction(userId: string, action: LedgerAgentAction): Promise<UndoResult> {
-  if (!action || !Number.isSafeInteger(action.number) || action.number <= 0) return { ok: false, error: "잘못된 요청이에요." };
-
+async function revertAction(userId: string, action: LedgerAgentAction): Promise<UndoResult> {
   if (action.kind === "add") {
     const tx = await findUserTransaction(userId, action.number);
     if (!tx || tx.cardOrg !== MANUAL_CARD_ORG) return { ok: false, error: "이미 지워졌거나 되돌릴 수 없는 내역이에요." };
     const result = await deleteManualTransaction(userId, action.number);
     return result.ok ? { ok: true } : { ok: false, error: "되돌리지 못했어요." };
   }
-  if (action.kind !== "edit") return { ok: false, error: "삭제한 내역은 되돌릴 수 없어요. 다시 추가해 주세요." };
-  if (!validState(action.before) || !validState(action.after)) return { ok: false, error: "잘못된 요청이에요." };
 
+  if (action.kind === "delete") {
+    const snap = action.snapshot;
+    if (snap.userId !== userId || snap.cardOrg !== MANUAL_CARD_ORG) return { ok: false, error: "되돌릴 수 없는 내역이에요." };
+    // JSON turned the timestamps into strings; the same #number and externalId come back
+    const inserted = await db
+      .insert(transactions)
+      .values({
+        ...snap,
+        occurredAt: new Date(snap.occurredAt),
+        createdAt: new Date(snap.createdAt),
+        updatedAt: new Date(),
+        excludedAt: snap.excludedAt ? new Date(snap.excludedAt) : null,
+      })
+      .onConflictDoNothing()
+      .returning({ number: transactions.number });
+    return inserted.length === 1 ? { ok: true } : { ok: false, error: "같은 번호의 내역이 이미 있어서 되살리지 못했어요." };
+  }
+
+  // Edits are restored only if the row still looks exactly like the agent left it, so a later
+  // manual edit is never silently overwritten (single conditional UPDATE).
   const { before, after } = action;
   const restored = await db
     .update(transactions)
@@ -129,4 +176,36 @@ export async function undoAgentAction(userId: string, action: LedgerAgentAction)
     ))
     .returning({ number: transactions.number });
   return restored.length === 1 ? { ok: true } : { ok: false, error: "그 사이 내용이 바뀌어서 되돌리지 않았어요." };
+}
+
+/**
+ * Undo by receipt id. The change to revert is read from the stored receipt (never from the client),
+ * and the receipt is claimed first so the same change cannot be undone twice.
+ */
+export async function undoReceipt(userId: string, receiptId: string): Promise<UndoResult> {
+  if (!/^[0-9a-f-]{36}$/i.test(receiptId)) return { ok: false, error: "잘못된 요청이에요." };
+  const receiptWhere = and(eq(chatMessages.id, receiptId), eq(chatMessages.userId, userId), eq(chatMessages.content, LEDGER_RECEIPT));
+  const [claimed] = await db
+    .update(chatMessages)
+    .set({ contentJson: sql`jsonb_set(${chatMessages.contentJson}::jsonb, '{undone}', 'true'::jsonb)::text` })
+    .where(and(receiptWhere, sql`(${chatMessages.contentJson}::jsonb ->> 'undone') = 'false'`))
+    .returning({ contentJson: chatMessages.contentJson });
+  const receipt = parseReceipt(claimed?.contentJson ?? null);
+  if (!receipt) return { ok: false, error: "이미 되돌렸거나 찾을 수 없는 작업이에요." };
+
+  const result = await revertAction(userId, receipt.action).catch((): UndoResult => ({ ok: false, error: "되돌리지 못했어요." }));
+  if (!result.ok) {
+    await db
+      .update(chatMessages)
+      .set({ contentJson: sql`jsonb_set(${chatMessages.contentJson}::jsonb, '{undone}', 'false'::jsonb)::text` })
+      .where(receiptWhere);
+    return result;
+  }
+  // Tell the agent (shared history) that the change was reverted
+  await db.insert(chatMessages).values({
+    userId,
+    role: "assistant",
+    content: `가계부 #${receipt.action.number} ${receipt.action.merchant}: 방금 작업을 되돌렸어요.`,
+  });
+  return { ok: true };
 }

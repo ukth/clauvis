@@ -5,12 +5,31 @@ import {
   ArrowTurnDownRightIcon, ArrowUpIcon, ArrowUturnLeftIcon, CheckCircleIcon,
   ClockIcon, MagnifyingGlassIcon, PaperClipIcon, ReceiptPercentIcon, XMarkIcon,
 } from "@heroicons/react/24/outline";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatActionCard, ChatAttachment, ChatItem } from "@/lib/ledger-chat";
 import { listAttachable, sendLedgerChat, undoLedgerAction, type PickerFilter, type PickerItem } from "../../chat-actions";
 import { BottomSheet } from "../../_components/tx-sheet";
 import { kstDate, kstTime, won } from "../../_components/format";
 
 type Message = ChatItem & { pending?: boolean; error?: boolean };
+
+// Agent replies are markdown; map elements to compact chat-bubble styles (no typography plugin)
+const MD_COMPONENTS: Components = {
+  p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+  h1: ({ children }) => <p className="font-semibold text-white">{children}</p>,
+  h2: ({ children }) => <p className="font-semibold text-white">{children}</p>,
+  h3: ({ children }) => <p className="font-semibold text-white">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc space-y-0.5 pl-5">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal space-y-0.5 pl-5">{children}</ol>,
+  a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-[#7EA2FF] underline">{children}</a>,
+  code: ({ children }) => <code className="rounded bg-white/10 px-1 py-0.5 text-[13px]">{children}</code>,
+  table: ({ children }) => <div className="overflow-x-auto"><table className="w-full text-left text-[13px]">{children}</table></div>,
+  th: ({ children }) => <th className="border-b border-white/10 px-2 py-1 font-semibold">{children}</th>,
+  td: ({ children }) => <td className="border-b border-white/5 px-2 py-1">{children}</td>,
+  hr: () => <hr className="border-white/10" />,
+};
 
 const SUGGESTIONS = ["어제 쓴 거 요약해줘", "계좌이체 추가할게", "분류 틀린 거 찾아줘"];
 
@@ -99,7 +118,15 @@ function Bubble({ message }: { message: Message }) {
   }
   return (
     <div className={`flex max-w-[88%] flex-col gap-2.5 rounded-2xl rounded-bl-[4px] p-3 ${message.error ? "bg-[#F06A6A]/10 text-[#F06A6A]" : "bg-[#121A30]"}`}>
-      {message.text ? <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.text}</p> : null}
+      {message.text ? (
+        message.error ? (
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.text}</p>
+        ) : (
+          <div className="flex flex-col gap-2 break-words text-sm leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{message.text}</ReactMarkdown>
+          </div>
+        )
+      ) : null}
       {message.actions?.map((action) => <ActionCard key={action.receiptId} action={action} />)}
     </div>
   );

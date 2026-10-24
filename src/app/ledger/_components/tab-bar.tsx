@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChartBarIcon, Cog6ToothIcon, HomeIcon, ListBulletIcon, SparklesIcon } from "@heroicons/react/24/outline";
@@ -14,16 +15,20 @@ const TABS = [
 
 export function TabBar() {
   const pathname = usePathname();
+  // Highlight the tapped tab right away instead of waiting for the next page to arrive
+  const [pending, setPending] = useState<{ href: string; from: string } | null>(null);
+  const current = pending && pending.from === pathname ? pending.href : pathname;
   return (
     <nav aria-label="가계부 메뉴" className="fixed inset-x-0 bottom-0 z-30 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
       <div className="mx-auto flex h-[60px] max-w-[448px] gap-1 rounded-[30px] border border-[#243055] bg-[#1A2342]/90 p-1.5 backdrop-blur-xl">
         {TABS.map(({ href, label, Icon }) => {
-          const active = href === "/ledger" ? pathname === "/ledger" : pathname.startsWith(href);
+          const active = href === "/ledger" ? current === "/ledger" : current.startsWith(href);
           return (
             <Link
               key={href}
               href={href}
               aria-current={active ? "page" : undefined}
+              onClick={() => setPending({ href, from: pathname })}
               className={`flex flex-1 flex-col items-center justify-center gap-0.5 rounded-3xl text-[10px] ${active ? "bg-[#4C7BF3]/15 font-semibold text-[#4C7BF3]" : "text-[#8A93AD]"}`}
             >
               <Icon aria-hidden="true" className="size-5" />

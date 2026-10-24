@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { db } from "./db";
-import { todos, projects, users, chatMessages, ideas } from "./db/schema";
+import { todos, projects, users, chatMessages, ideas, transactions } from "./db/schema";
 import { eq, and, desc, isNull } from "drizzle-orm";
 import { getNextTodoNumber, getNextIdeaNumber } from "./db/utils";
 import { esc } from "./telegram";
@@ -61,6 +61,7 @@ Spending ledger:
 - delete_transaction only works for manually added entries; synced card transactions cannot be deleted. Call it only when the user names a #number or asks to undo the entry just added, and always echo the #number in the confirmation.
 - When the user asks to cancel/delete/remove a transaction ("지워", "삭제", "빼줘", "취소함"), act immediately — do not tell them to wait for a card cancellation: manual entries → delete_transaction; card rows (or if delete_transaction says it is a synced card transaction) → exclude_transaction, then say in one line that it was excluded from totals and can be restored. A later card-company cancellation SMS for an excluded charge is excluded automatically, so there is no double subtraction. "다시 넣어줘"/"복구" → include_transaction. Always echo the #number.
 - Categories are a fixed list: 외식, 배달, 카페·간식, 장보기, 생필품, 쇼핑, 교통, 여행, 통신비, 구독·AI, 업무, 의료, 경조사·선물, 기타. New card rows are auto-classified by AI; the user reviews and corrects them. A reply like "#12 장보기" or "그거 외식 아니고 경조사" → update_transaction_memo with the category. A reply that is not a category name is a memo. Always set a category on add_transaction.
+- A message from the web app may start with "[첨부 #N ...]": the user attached transaction #N, so "이거"/"this" refers to it.
 - Identify the row by #number, or by a merchant/amount reference that matches exactly one recent transaction (call list_transactions to check). If it matches several or none, ask which #number instead of guessing.`;
 
 const toolDefinitions: Anthropic.Tool[] = [
@@ -1152,12 +1153,95 @@ const MODEL_MAP: Record<string, string> = {
   opus: "claude-opus-5-5",
 };
 
+/** Snapshot of the user-editable fields of a transaction, used to undo agent edits from the web chat. */
+export type LedgerTxState = {
+  category: string | null;
+  categorySource: string | null;
+  memo: string | null;
+  excluded: boolean;
+  excludeReason: string | null;
+};
+
+/** A ledger change made by the agent during one turn. */
+export type LedgerAgentAction =
+  | { kind: "edit"; tool: string; number: number; merchant: string; amount: number | null; before: LedgerTxState; after: LedgerTxState }
+  | { kind: "add"; number: number; merchant: string; amount: number | null }
+  | { kind: "delete"; number: number; merchant: string; amount: number | null };
+
+const LEDGER_EDIT_TOOLS = new Set(["update_transaction_memo", "exclude_transaction", "include_transaction"]);
+
+async function readTxState(userId: string, number: number) {
+  const [row] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.number, number)))
+    .limit(1);
+  if (!row) return null;
+  const state: LedgerTxState = {
+    category: row.category,
+    categorySource: row.categorySource,
+    memo: row.memo,
+    excluded: row.excludedAt != null,
+    excludeReason: row.excludeReason,
+  };
+  return { row, state };
+}
+
+function sameState(a: LedgerTxState, b: LedgerTxState): boolean {
+  return a.category === b.category && a.categorySource === b.categorySource && a.memo === b.memo
+    && a.excluded === b.excluded && a.excludeReason === b.excludeReason;
+}
+
+/** Run a tool and, for ledger tools, record what changed so the web chat can show and undo it. */
+async function executeToolTracked(
+  name: string,
+  input: Record<string, unknown>,
+  userId: string,
+  userMessage: string,
+  actions: LedgerAgentAction[]
+): Promise<string> {
+  const number = typeof input.number === "number" && Number.isSafeInteger(input.number) ? input.number : null;
+  const before = number != null && (LEDGER_EDIT_TOOLS.has(name) || name === "delete_transaction")
+    ? await readTxState(userId, number)
+    : null;
+  const result = await executeTool(name, input, userId, userMessage);
+
+  if (before && number != null) {
+    if (name === "delete_transaction") {
+      if (!(await readTxState(userId, number))) {
+        actions.push({ kind: "delete", number, merchant: before.row.merchant, amount: before.row.amount });
+      }
+    } else {
+      const after = await readTxState(userId, number);
+      if (after && !sameState(before.state, after.state)) {
+        actions.push({ kind: "edit", tool: name, number, merchant: after.row.merchant, amount: after.row.amount, before: before.state, after: after.state });
+      }
+    }
+  } else if (name === "add_transaction") {
+    const added = /^Added: #(\d+)/.exec(result);
+    const tx = added ? await readTxState(userId, Number(added[1])) : null;
+    if (tx) actions.push({ kind: "add", number: tx.row.number, merchant: tx.row.merchant, amount: tx.row.amount });
+  }
+  return result;
+}
+
 export async function runAgent(
   userMessage: string,
   userId: string,
   anthropicApiKey: string,
   model?: string
 ): Promise<string> {
+  return (await runAgentDetailed(userMessage, userId, anthropicApiKey, model)).reply;
+}
+
+/** Same agent turn as runAgent, plus the ledger changes it made (for the web chat's result cards). */
+export async function runAgentDetailed(
+  userMessage: string,
+  userId: string,
+  anthropicApiKey: string,
+  model?: string
+): Promise<{ reply: string; actions: LedgerAgentAction[] }> {
+  const actions: LedgerAgentAction[] = [];
   const client = new Anthropic({ apiKey: anthropicApiKey });
   const modelId = MODEL_MAP[model || "sonnet"] || MODEL_MAP.sonnet;
   // Load project context for system prompt
@@ -1222,11 +1306,12 @@ ${projectContext || "None"}`;
     // Process tool calls
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const toolUse of toolUseBlocks) {
-      const result = await executeTool(
+      const result = await executeToolTracked(
         toolUse.name,
         toolUse.input as Record<string, unknown>,
         userId,
-        userMessage
+        userMessage,
+        actions
       );
       toolResults.push({
         type: "tool_result",
@@ -1246,5 +1331,5 @@ ${projectContext || "None"}`;
   // Save all new messages from this interaction
   await saveMessages(userId, messages.slice(newStartIndex));
 
-  return finalResponse;
+  return { reply: finalResponse, actions };
 }

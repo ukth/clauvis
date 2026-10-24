@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
       status: tx.status ?? "approved",
       // Unknown names are dropped so the AI classifier picks from the fixed list
       category: tx.category && isCategory(tx.category) ? tx.category : null,
+      categorySource: tx.category && isCategory(tx.category) ? "rule" as const : null,
       items: tx.items ?? null,
       memo: tx.memo ?? null,
       externalId: tx.externalId,
@@ -148,8 +149,9 @@ export async function POST(request: NextRequest) {
           cardName: sql`coalesce(excluded.card_name, ${transactions.cardName})`,
           installmentMonths: sql`excluded.installment_months`,
           status: sql`excluded.status`,
-          // Keep user-set values: category only fills when empty, memo is never overwritten once set
-          category: sql`coalesce(${transactions.category}, excluded.category)`,
+          // Preserve explicit user choices, including clearing a category.
+          category: sql`case when ${transactions.categorySource} = 'user' then ${transactions.category} else coalesce(${transactions.category}, excluded.category) end`,
+          categorySource: sql`case when ${transactions.categorySource} = 'user' or ${transactions.category} is not null then ${transactions.categorySource} else excluded.category_source end`,
           items: sql`coalesce(excluded.items, ${transactions.items})`,
           memo: sql`coalesce(${transactions.memo}, excluded.memo)`,
           updatedAt: sql`excluded.updated_at`,

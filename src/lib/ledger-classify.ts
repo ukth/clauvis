@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./db";
 import { transactions, users } from "./db/schema";
-import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, notInArray, or } from "drizzle-orm";
 import { decrypt } from "./crypto";
 import { CATEGORIES, isCategory } from "./ledger";
 
@@ -34,6 +34,7 @@ export async function classifyUncategorized(userId: string): Promise<number> {
       .from(transactions)
       .where(and(
         eq(transactions.userId, userId),
+        or(isNull(transactions.categorySource), ne(transactions.categorySource, "user")),
         or(isNull(transactions.category), notInArray(transactions.category, [...CATEGORIES])),
       ))
       .limit(BATCH_LIMIT);
@@ -82,10 +83,11 @@ export async function classifyUncategorized(userId: string): Promise<number> {
       // Re-check the condition so a category the user set meanwhile is not overwritten
       const updated = await db
         .update(transactions)
-        .set({ category, updatedAt: new Date() })
+        .set({ category, categorySource: "ai", updatedAt: new Date() })
         .where(and(
           eq(transactions.userId, userId),
           inArray(transactions.number, numbers),
+          or(isNull(transactions.categorySource), ne(transactions.categorySource, "user")),
           or(isNull(transactions.category), notInArray(transactions.category, [...CATEGORIES])),
         ))
         .returning({ number: transactions.number });

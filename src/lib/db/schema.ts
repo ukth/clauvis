@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, timestamp, pgEnum, unique, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const priorityEnum = pgEnum("priority", ["urgent", "normal", "low"]);
 export const statusEnum = pgEnum("status", ["pending", "done"]);
@@ -19,6 +20,34 @@ export const users = pgTable("users", {
   ledgerDigestDate: text("ledger_digest_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const webLoginRequests = pgTable("web_login_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  secretHash: text("secret_hash").notNull().unique(),
+  pairCode: text("pair_code").notNull(),
+  userAgent: text("user_agent").notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("web_login_requests_active_pair_code_idx")
+    .on(table.pairCode)
+    .where(sql`${table.consumedAt} IS NULL`),
+]);
+
+export const webSessions = pgTable("web_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  userAgent: text("user_agent").notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("web_sessions_user_idx").on(table.userId),
+]);
 
 export const projects = pgTable("projects", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -94,6 +123,7 @@ export const chatMessages = pgTable("chat_messages", {
 });
 
 export type TransactionItem = { name: string; qty?: number | null; price?: number | null };
+export type CategorySource = "rule" | "ai" | "user";
 
 export const transactions = pgTable("transactions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -112,6 +142,7 @@ export const transactions = pgTable("transactions", {
   installmentMonths: integer("installment_months").notNull().default(0),
   status: text("status").notNull().default("approved"),
   category: text("category"),
+  categorySource: text("category_source").$type<CategorySource>(),
   items: jsonb("items").$type<TransactionItem[]>(),
   memo: text("memo"),
   // User-controlled exclusion from totals; never touched by the sync upsert so it survives re-sync

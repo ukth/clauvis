@@ -145,7 +145,10 @@ export async function updateTransactionMemo(
 ): Promise<Transaction | null> {
   const updateData: PgUpdateSetSource<typeof transactions> = { updatedAt: new Date() };
   if (input.memo !== undefined) updateData.memo = input.memo;
-  if (input.category !== undefined) updateData.category = input.category;
+  if (input.category !== undefined) {
+    updateData.category = input.category;
+    updateData.categorySource = "user";
+  }
   if (input.excluded === true) {
     // Keep the original exclusion time if already excluded
     updateData.excludedAt = sql`coalesce(${transactions.excludedAt}, now())`;
@@ -245,6 +248,7 @@ export async function addManualTransaction(
       installmentMonths: 0,
       status: "approved",
       category: input.category ?? null,
+      categorySource: input.category != null ? "user" : null,
       memo: input.memo ?? null,
       externalId: `manual:${crypto.randomUUID()}`,
     })

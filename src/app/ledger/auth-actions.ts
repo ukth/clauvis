@@ -14,7 +14,7 @@ import {
 type ActionError = { ok: false; error: string; unauthorized?: boolean };
 type ActionSuccess = { ok: true };
 type LoginRequestResult = { ok: true; pairCode: string; expiresAt: string } | ActionError;
-type PollResult = { ok: true; status: "pending" | "expired" | "authenticated" } | ActionError;
+type PollResult = { ok: true; status: "pending" | "expired" | "rejected" | "authenticated" } | ActionError;
 
 function isUniqueConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -85,10 +85,13 @@ export async function pollLoginRequest(): Promise<PollResult> {
       jar.delete(REQUEST_COOKIE);
       return { ok: true, status: "authenticated" };
     }
-    const [pending] = await db.select({ id: webLoginRequests.id }).from(webLoginRequests).where(and(
-      eq(webLoginRequests.secretHash, hashToken(secret)), isNull(webLoginRequests.consumedAt),
-      gt(webLoginRequests.expiresAt, new Date()),
-    )).limit(1);
+    const [row] = await db.select({
+      consumedAt: webLoginRequests.consumedAt,
+      rejectedAt: webLoginRequests.rejectedAt,
+      expiresAt: webLoginRequests.expiresAt,
+    }).from(webLoginRequests).where(eq(webLoginRequests.secretHash, hashToken(secret))).limit(1);
+    if (row?.rejectedAt) return { ok: true, status: "rejected" };
+    const pending = row && !row.consumedAt && row.expiresAt > new Date();
     return { ok: true, status: pending ? "pending" : "expired" };
   } catch {
     return { ok: false, error: "승인 상태를 확인하지 못했습니다. 잠시 후 다시 시도합니다." };

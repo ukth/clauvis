@@ -134,6 +134,15 @@ function daysInMonth(month: string): number {
   return new Date(Date.UTC(year, number, 0)).getUTCDate();
 }
 
+/** Keep the goal card visible even before its first charge of the month. */
+function withShinhanGoal(cards: LedgerCardPerformance[]): LedgerCardPerformance[] {
+  if (cards.some((card) => card.target !== null)) return cards;
+  return [...cards, {
+    key: "신한 T&Life", total: 0, count: 0,
+    target: SHINHAN_THRESHOLD, remaining: SHINHAN_THRESHOLD, benefit: "통신비 21,000원 할인",
+  }];
+}
+
 export async function getLedgerHome(userId: string, month = kstMonthString()): Promise<LedgerHome> {
   await authorize(userId);
   validateMonth(month);
@@ -168,7 +177,7 @@ export async function getLedgerHome(userId: string, month = kstMonthString()): P
     },
     categories: summary.byCategory,
     dailyTotals,
-    cards: summary.byCard.map((card) => {
+    cards: withShinhanGoal(summary.byCard.map((card) => {
       const eligible = rows.some((row) => (row.cardName || row.cardOrg) === card.key
         && /신한|shinhan/i.test(`${row.cardOrg} ${row.cardName ?? ""}`)
         && /t\s*[&＆]?\s*life|t\s*라이프/i.test(row.cardName ?? ""));
@@ -178,7 +187,7 @@ export async function getLedgerHome(userId: string, month = kstMonthString()): P
         remaining: eligible ? Math.max(0, SHINHAN_THRESHOLD - card.total) : null,
         benefit: eligible ? "통신비 21,000원 할인" : null,
       };
-    }),
+    })),
     recentTransactions: rows.sort(newestFirst).slice(0, 3).map(toTransaction),
     lastSyncedAt: user?.lastSyncedAt?.toISOString() ?? null,
   };

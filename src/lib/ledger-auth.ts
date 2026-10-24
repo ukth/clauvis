@@ -11,7 +11,8 @@ export const REQUEST_COOKIE = "clauvis_login_request";
 export const SESSION_SECONDS = 365 * 24 * 60 * 60;
 export const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: true,
+  // Plain-http localhost (Safari) drops Secure cookies; production is always HTTPS
+  secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
 };
@@ -66,7 +67,7 @@ export async function decidePairingRequest(id: string, userId: string, approve: 
   if (!/^[a-f0-9-]{36}$/i.test(id)) return false;
   const now = new Date();
   const rows = await db.update(webLoginRequests)
-    .set(approve ? { userId, approvedAt: now } : { consumedAt: now })
+    .set(approve ? { userId, approvedAt: now } : { consumedAt: now, rejectedAt: now })
     .where(and(
       eq(webLoginRequests.id, id), isNull(webLoginRequests.approvedAt),
       isNull(webLoginRequests.consumedAt), gt(webLoginRequests.expiresAt, now),

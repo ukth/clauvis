@@ -28,6 +28,8 @@ export const webLoginRequests = pgTable("web_login_requests", {
   userAgent: text("user_agent").notNull(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
+  // Set together with consumedAt when the user taps "거절", so the browser can say so
+  rejectedAt: timestamp("rejected_at", { withTimezone: true }),
   consumedAt: timestamp("consumed_at", { withTimezone: true }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

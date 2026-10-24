@@ -13,6 +13,7 @@ export function LoginForm() {
   const [remaining, setRemaining] = useState(0);
   const [creating, setCreating] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rejected, setRejected] = useState(false);
   const creatingRef = useRef(false);
 
   const createRequest = useCallback(async () => {
@@ -20,6 +21,7 @@ export function LoginForm() {
     creatingRef.current = true;
     setCreating(true);
     setError(null);
+    setRejected(false);
     setRequest(null);
     try {
       const result = await createLoginRequest();
@@ -68,8 +70,9 @@ export function LoginForm() {
           active = false;
           router.replace("/ledger");
           router.refresh();
-        } else if (result.status === "expired") {
+        } else if (result.status === "expired" || result.status === "rejected") {
           expired = true;
+          setRejected(result.status === "rejected");
           setRemaining(0);
           setError(null);
         } else {
@@ -116,7 +119,7 @@ export function LoginForm() {
         </p>
         <p className="flex items-center justify-center gap-2 text-sm text-[#929BB5]">
           <ClockIcon aria-hidden="true" className="size-4" />
-          {creating ? "코드를 준비하고 있어요" : ready ? `${timer} 후 만료` : "코드가 만료되었어요"}
+          {creating ? "코드를 준비하고 있어요" : rejected ? "텔레그램에서 거절된 요청이에요" : ready ? `${timer} 후 만료` : "코드가 만료되었어요"}
         </p>
       </section>
 

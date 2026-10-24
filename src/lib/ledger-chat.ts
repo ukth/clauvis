@@ -201,11 +201,11 @@ export async function undoReceipt(userId: string, receiptId: string): Promise<Un
       .where(receiptWhere);
     return result;
   }
-  // Tell the agent (shared history) that the change was reverted
+  // Tell the agent (shared history) that the change was reverted; the undo itself already succeeded
   await db.insert(chatMessages).values({
     userId,
     role: "assistant",
     content: `가계부 #${receipt.action.number} ${receipt.action.merchant}: 방금 작업을 되돌렸어요.`,
-  });
+  }).catch((error) => console.error("[LEDGER] undo note failed:", error));
   return { ok: true };
 }

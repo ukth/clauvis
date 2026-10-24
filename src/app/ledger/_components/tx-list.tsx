@@ -68,7 +68,7 @@ export function TxList({ groups, detailed = true }: { groups: TxGroup[]; detaile
             {group.label ? (
               <header className="flex justify-between text-[13px] text-[#8A93AD]">
                 <h3 className="font-semibold">{group.label}</h3>
-                {group.total != null ? <span className="tabular-nums">-{won(group.total)}</span> : null}
+                {group.total != null ? <span className="tabular-nums">{group.total < 0 ? `+${won(-group.total)}` : `-${won(group.total)}`}</span> : null}
               </header>
             ) : null}
             <ul className="overflow-hidden rounded-2xl bg-[#121A30]">

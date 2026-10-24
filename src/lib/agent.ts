@@ -1222,26 +1222,32 @@ async function executeToolTracked(
   userMessage: string,
   actions: LedgerAgentAction[]
 ): Promise<string> {
+  // Tracking is best-effort: a failed read skips the receipt but never fails the tool call
+  // (undefined = read failed, null = row does not exist)
+  const read = (n: number) => readTxState(userId, n).catch((error) => {
+    console.error("[AGENT] ledger tracking read failed:", error);
+    return undefined;
+  });
   const number = typeof input.number === "number" && Number.isSafeInteger(input.number) ? input.number : null;
   const before = number != null && (LEDGER_EDIT_TOOLS.has(name) || name === "delete_transaction")
-    ? await readTxState(userId, number)
+    ? await read(number)
     : null;
   const result = await executeTool(name, input, userId, userMessage);
 
   if (before && number != null) {
     if (name === "delete_transaction") {
-      if (!(await readTxState(userId, number))) {
+      if ((await read(number)) === null) {
         actions.push({ kind: "delete", number, merchant: before.row.merchant, amount: before.row.amount, snapshot: before.row });
       }
     } else {
-      const after = await readTxState(userId, number);
+      const after = await read(number);
       if (after && !sameState(before.state, after.state)) {
         actions.push({ kind: "edit", tool: name, number, merchant: after.row.merchant, amount: after.row.amount, before: before.state, after: after.state });
       }
     }
   } else if (name === "add_transaction") {
     const added = /^Added: #(\d+)/.exec(result);
-    const tx = added ? await readTxState(userId, Number(added[1])) : null;
+    const tx = added ? await read(Number(added[1])) : null;
     if (tx) actions.push({ kind: "add", number: tx.row.number, merchant: tx.row.merchant, amount: tx.row.amount });
   }
   return result;
@@ -1352,7 +1358,14 @@ ${projectContext || "None"}`;
 
   // Save all new messages from this interaction
   await saveMessages(userId, messages.slice(newStartIndex));
-  const receiptIds = await saveReceipts(userId, actions);
+  // The reply and the changes are already saved; a receipt failure only hides the web result cards
+  const receiptIds = await saveReceipts(userId, actions).catch((error) => {
+    console.error("[AGENT] saving ledger receipts failed:", error);
+    return [] as string[];
+  });
 
-  return { reply: finalResponse, actions: actions.map((action, index) => ({ receiptId: receiptIds[index], action })) };
+  return {
+    reply: finalResponse,
+    actions: actions.flatMap((action, index) => (receiptIds[index] ? [{ receiptId: receiptIds[index], action }] : [])),
+  };
 }

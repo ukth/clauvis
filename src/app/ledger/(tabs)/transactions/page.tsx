@@ -33,8 +33,10 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     const date = kstDate(tx.occurredAt);
     const group = byDay.get(date) ?? { key: date, label: dayLabel(date, today), total: 0, transactions: [] };
     group.transactions.push(tx);
+    // Same rule as signedAmount: approved adds, cancelled subtracts, regardless of the stored sign
     if (!tx.excluded && tx.amount != null) {
-      group.total = (group.total ?? 0) + (tx.status === "approved" ? tx.amount : tx.status === "cancelled" ? -tx.amount : 0);
+      const amount = Math.abs(tx.amount);
+      group.total = (group.total ?? 0) + (tx.status === "approved" ? amount : tx.status === "cancelled" ? -amount : 0);
     }
     byDay.set(date, group);
   }

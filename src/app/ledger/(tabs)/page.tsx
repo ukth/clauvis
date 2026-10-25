@@ -5,6 +5,7 @@ import { isValidMonth, kstDayOfMonth, kstMonthString } from "@/lib/ledger";
 import { requestTime, requirePageSession } from "../_components/session";
 import { categoryColor, monthLabel, relativeTime, shiftMonth, won } from "../_components/format";
 import { TxList } from "../_components/tx-list";
+import { DailyChart } from "../_components/daily-chart";
 
 function SectionHeader({ title, href, link }: { title: string; href?: string; link?: string }) {
   return (
@@ -29,7 +30,6 @@ export default async function LedgerHomePage({ searchParams }: { searchParams: P
   const categoryTotal = categories.reduce((acc, c) => acc + c.total, 0);
   const top = categories.slice(0, 5);
   const restTotal = categories.slice(5).reduce((acc, c) => acc + c.total, 0);
-  const maxDaily = Math.max(...home.dailyTotals.map((d) => d.total), 1);
   const change = home.comparison.changePct;
 
   return (
@@ -104,16 +104,7 @@ export default async function LedgerHomePage({ searchParams }: { searchParams: P
 
       <section className="flex flex-col gap-3.5 rounded-[20px] bg-[#121A30] p-[18px]">
         <SectionHeader title="일별 지출" />
-        <div className="flex h-[90px] items-end gap-[3px]" role="img" aria-label="일별 지출 막대 그래프">
-          {home.dailyTotals.map((d, index) => (
-            <span
-              key={d.date}
-              title={`${index + 1}일 ${won(d.total)}`}
-              className={`flex-1 rounded-sm ${index + 1 === today ? "bg-[#4C7BF3]" : "bg-[#2C3A66]"} ${today > 0 && index + 1 > today ? "opacity-30" : ""}`}
-              style={{ height: `${Math.max(3, (Math.max(d.total, 0) / maxDaily) * 90)}px` }}
-            />
-          ))}
-        </div>
+        <DailyChart dailyTotals={home.dailyTotals} today={today} />
         <div className="flex justify-between text-[11px] text-[#8A93AD]">
           <span>1일</span>
           <span>{Math.ceil(home.dailyTotals.length / 2)}일</span>

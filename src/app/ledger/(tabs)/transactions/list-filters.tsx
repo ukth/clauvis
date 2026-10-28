@@ -12,6 +12,7 @@ type Props = {
   card: string | null;
   query: string;
   includeExcluded: boolean;
+  includeCancelled: boolean;
   cards: string[];
   current: string;
 };
@@ -30,15 +31,15 @@ function Chip({ label, active, value, options, onChange }: {
   );
 }
 
-export function ListFilters({ month, category, card, query, includeExcluded, cards, current }: Props) {
+export function ListFilters({ month, category, card, query, includeExcluded, includeCancelled, cards, current }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [searching, setSearching] = useState(query !== "");
   const [text, setText] = useState(query);
   const [adding, setAdding] = useState(false);
 
-  const go = (patch: Partial<Record<"month" | "category" | "card" | "q" | "excluded", string | null>>) => {
-    const next = { month, category, card, q: query || null, excluded: includeExcluded ? "1" : null, ...patch };
+  const go = (patch: Partial<Record<"month" | "category" | "card" | "q" | "excluded" | "cancelled", string | null>>) => {
+    const next = { month, category, card, q: query || null, excluded: includeExcluded ? "1" : null, cancelled: includeCancelled ? "1" : null, ...patch };
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(next)) if (value) params.set(key, value);
     router.replace(`${pathname}?${params.toString()}`);
@@ -94,6 +95,10 @@ export function ListFilters({ month, category, card, query, includeExcluded, car
         <button type="button" onClick={() => go({ excluded: includeExcluded ? null : "1" })}
           className={`shrink-0 rounded-2xl px-3 py-[7px] text-[13px] ${includeExcluded ? "bg-[#4C7BF3] font-semibold text-white" : "border border-[#243055] bg-[#121A30]"}`}>
           제외 포함
+        </button>
+        <button type="button" onClick={() => go({ cancelled: includeCancelled ? null : "1" })}
+          className={`shrink-0 rounded-2xl px-3 py-[7px] text-[13px] ${includeCancelled ? "bg-[#4C7BF3] font-semibold text-white" : "border border-[#243055] bg-[#121A30]"}`}>
+          취소 포함
         </button>
       </div>
       {adding ? <AddTxSheet onClose={() => setAdding(false)} /> : null}

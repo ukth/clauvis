@@ -61,6 +61,7 @@ export interface LedgerTransactionFilters {
   cardName?: string;
   search?: string;
   includeExcluded?: boolean;
+  includeCancelled?: boolean;
 }
 
 export interface LedgerTransactionList {
@@ -129,6 +130,30 @@ function newestFirst(a: Transaction, b: Transaction): number {
   return b.occurredAt.getTime() - a.occurredAt.getTime() || b.number - a.number;
 }
 
+/**
+ * Ids of approval/cancellation pairs that net to zero: same card, amount and merchant, approval first.
+ * Each cancellation takes the latest unmatched earlier approval; unmatched cancellations stay visible.
+ */
+function cancelledPairIds(rows: Transaction[]): Set<string> {
+  const paired = new Set<string>();
+  const open = new Map<string, Transaction[]>();
+  const chronological = [...rows].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.number - b.number);
+  for (const row of chronological) {
+    if (isExcluded(row) || row.amount == null) continue;
+    const key = `${row.cardOrg}|${row.cardName ?? ""}|${Math.abs(row.amount)}|${row.merchant}`;
+    if (row.status === "approved") {
+      open.set(key, [...(open.get(key) ?? []), row]);
+    } else if (row.status === "cancelled") {
+      const approval = open.get(key)?.pop();
+      if (approval) {
+        paired.add(approval.id);
+        paired.add(row.id);
+      }
+    }
+  }
+  return paired;
+}
+
 function daysInMonth(month: string): number {
   const [year, number] = month.split("-").map(Number);
   return new Date(Date.UTC(year, number, 0)).getUTCDate();
@@ -157,10 +182,12 @@ export async function getLedgerHome(userId: string, month = kstMonthString()): P
     summarizeRange(userId, ranges.previous),
     db.select({ lastSyncedAt: users.ledgerSyncedAt }).from(users).where(eq(users.id, userId)),
   ]);
+  const paired = cancelledPairIds(rows);
+  const visible = rows.filter((row) => !paired.has(row.id));
   const dailyTotals = Array.from({ length: daysInMonth(month) }, (_, index) => ({
     date: `${month}-${String(index + 1).padStart(2, "0")}`, total: 0, count: 0,
   }));
-  for (const row of rows) {
+  for (const row of visible) {
     const day = dailyTotals[kstDayOfMonth(row.occurredAt) - 1];
     day.total += signedAmount(row);
     if (row.status === "approved" && !isExcluded(row)) day.count += 1;
@@ -168,7 +195,8 @@ export async function getLedgerHome(userId: string, month = kstMonthString()): P
   return {
     month,
     total: summary.total,
-    count: summary.count,
+    // Cancelled-out approvals still count as approved in the shared summary
+    count: summary.count - rows.filter((row) => paired.has(row.id) && row.status === "approved").length,
     comparison: {
       currentTotal: current.total,
       previousTotal: previous.total,
@@ -188,7 +216,7 @@ export async function getLedgerHome(userId: string, month = kstMonthString()): P
         benefit: eligible ? "통신비 21,000원 할인" : null,
       };
     })),
-    recentTransactions: rows.sort(newestFirst).slice(0, 3).map(toTransaction),
+    recentTransactions: visible.sort(newestFirst).slice(0, 3).map(toTransaction),
     lastSyncedAt: user?.lastSyncedAt?.toISOString() ?? null,
   };
 }
@@ -205,14 +233,17 @@ export async function getLedgerTransactions(
   }
   if ((filters.cardName !== undefined && typeof filters.cardName !== "string")
     || (filters.search !== undefined && (typeof filters.search !== "string" || filters.search.length > 200))
-    || (filters.includeExcluded !== undefined && typeof filters.includeExcluded !== "boolean")) {
+    || (filters.includeExcluded !== undefined && typeof filters.includeExcluded !== "boolean")
+    || (filters.includeCancelled !== undefined && typeof filters.includeCancelled !== "boolean")) {
     throw new Error("조회 조건이 올바르지 않습니다.");
   }
   // The existing list helper caps results at 200; range queries preserve complete monthly data.
   const rows = await getTransactionsInRange(userId, kstMonthRange(filters.month));
   const search = filters.search?.trim().toLocaleLowerCase("ko-KR") ?? "";
   const amountSearch = search.replace(/[,\s원]/g, "");
+  const paired = filters.includeCancelled ? new Set<string>() : cancelledPairIds(rows);
   const filtered = rows.filter((row) => {
+    if (paired.has(row.id)) return false;
     if (!filters.includeExcluded && isExcluded(row)) return false;
     if (filters.category && (row.category || "미분류") !== filters.category) return false;
     if (filters.cardName && (row.cardName || row.cardOrg) !== filters.cardName) return false;

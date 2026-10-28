@@ -5,7 +5,7 @@ import { cardOf, dayLabel, kstDate, won } from "../../_components/format";
 import { TxList, type TxGroup } from "../../_components/tx-list";
 import { ListFilters } from "./list-filters";
 
-type Search = { month?: string; category?: string; card?: string; q?: string; excluded?: string };
+type Search = { month?: string; category?: string; card?: string; q?: string; excluded?: string; cancelled?: string };
 
 export default async function TransactionsPage({ searchParams }: { searchParams: Promise<Search> }) {
   const session = await requirePageSession();
@@ -20,6 +20,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     cardName: params.card || undefined,
     search: params.q?.slice(0, 200) || undefined,
     includeExcluded: params.excluded === "1",
+    includeCancelled: params.cancelled === "1",
   };
   const [list, all] = await Promise.all([
     getLedgerTransactions(session.userId, filters),
@@ -43,7 +44,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
 
   return (
     <main className="flex flex-col gap-[18px] px-5 pt-[max(16px,env(safe-area-inset-top))]">
-      <ListFilters month={month} category={category ?? null} card={filters.cardName ?? null} query={filters.search ?? ""} includeExcluded={filters.includeExcluded ?? false} cards={cards} current={current} />
+      <ListFilters month={month} category={category ?? null} card={filters.cardName ?? null} query={filters.search ?? ""} includeExcluded={filters.includeExcluded ?? false} includeCancelled={filters.includeCancelled ?? false} cards={cards} current={current} />
       <p className="flex justify-between text-[13px] text-[#8A93AD]">
         <span>{list.count}건</span>
         <span>합계 {won(list.total)}</span>

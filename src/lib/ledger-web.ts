@@ -159,13 +159,45 @@ function daysInMonth(month: string): number {
   return new Date(Date.UTC(year, number, 0)).getUTCDate();
 }
 
-/** Keep the goal card visible even before its first charge of the month. */
-function withShinhanGoal(cards: LedgerCardPerformance[]): LedgerCardPerformance[] {
-  if (cards.some((card) => card.target !== null)) return cards;
-  return [...cards, {
-    key: "신한 T&Life", total: 0, count: 0,
-    target: SHINHAN_THRESHOLD, remaining: SHINHAN_THRESHOLD, benefit: "통신비 21,000원 할인",
-  }];
+interface CardGoal {
+  label: string;
+  target: number;
+  benefit: string;
+  matches: (row: Transaction) => boolean;
+}
+
+// Monthly spending targets that unlock card benefits (see ~/Personal/finance/cards.md)
+const CARD_GOALS: CardGoal[] = [
+  {
+    label: "신한 T&Life",
+    target: SHINHAN_THRESHOLD,
+    benefit: "통신비 21,000원 할인",
+    matches: (row) => /신한|shinhan/i.test(`${row.cardOrg} ${row.cardName ?? ""}`)
+      && /t\s*[&＆]?\s*life|t\s*라이프/i.test(row.cardName ?? ""),
+  },
+  {
+    label: "현대 NOL",
+    target: 400_000,
+    benefit: "NOL 포인트 10% 적립",
+    matches: (row) => /현대|hyundai/i.test(`${row.cardOrg} ${row.cardName ?? ""}`) && /nol|놀/i.test(row.cardName ?? ""),
+  },
+];
+
+/** Attach goals to matching cards; goal cards stay visible even before their first charge of the month. */
+function withCardGoals(cards: SummaryBucket[], rows: Transaction[]): LedgerCardPerformance[] {
+  const withTargets: LedgerCardPerformance[] = cards.map((card) => {
+    const goal = CARD_GOALS.find((g) => rows.some((row) => (row.cardName || row.cardOrg) === card.key && g.matches(row)));
+    return {
+      ...card,
+      target: goal?.target ?? null,
+      remaining: goal ? Math.max(0, goal.target - card.total) : null,
+      benefit: goal?.benefit ?? null,
+    };
+  });
+  const missing = CARD_GOALS
+    .filter((goal) => !withTargets.some((card) => card.target === goal.target && card.benefit === goal.benefit))
+    .map((goal) => ({ key: goal.label, total: 0, count: 0, target: goal.target, remaining: goal.target, benefit: goal.benefit }));
+  return [...withTargets, ...missing];
 }
 
 export async function getLedgerHome(userId: string, month = kstMonthString()): Promise<LedgerHome> {
@@ -205,17 +237,7 @@ export async function getLedgerHome(userId: string, month = kstMonthString()): P
     },
     categories: summary.byCategory,
     dailyTotals,
-    cards: withShinhanGoal(summary.byCard.map((card) => {
-      const eligible = rows.some((row) => (row.cardName || row.cardOrg) === card.key
-        && /신한|shinhan/i.test(`${row.cardOrg} ${row.cardName ?? ""}`)
-        && /t\s*[&＆]?\s*life|t\s*라이프/i.test(row.cardName ?? ""));
-      return {
-        ...card,
-        target: eligible ? SHINHAN_THRESHOLD : null,
-        remaining: eligible ? Math.max(0, SHINHAN_THRESHOLD - card.total) : null,
-        benefit: eligible ? "통신비 21,000원 할인" : null,
-      };
-    })),
+    cards: withCardGoals(summary.byCard, rows),
     recentTransactions: visible.sort(newestFirst).slice(0, 3).map(toTransaction),
     lastSyncedAt: user?.lastSyncedAt?.toISOString() ?? null,
   };

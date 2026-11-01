@@ -43,7 +43,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   }
 
   return (
-    <main className="flex flex-col gap-[18px] px-5 pt-[max(16px,env(safe-area-inset-top))]">
+    <main className="flex flex-col gap-[18px] px-5 pt-[calc(max(16px,env(safe-area-inset-top))+12px)]">
       <ListFilters month={month} category={category ?? null} card={filters.cardName ?? null} query={filters.search ?? ""} includeExcluded={filters.includeExcluded ?? false} includeCancelled={filters.includeCancelled ?? false} cards={cards} current={current} />
       <p className="flex justify-between text-[13px] text-[#8A93AD]">
         <span>{list.count}건</span>

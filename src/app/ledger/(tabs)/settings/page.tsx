@@ -34,7 +34,7 @@ export default async function SettingsPage() {
   const fresh = settings.lastSyncedAt != null && now - Date.parse(settings.lastSyncedAt) < 48 * 3_600_000;
 
   return (
-    <main className="flex flex-col gap-6 px-5 pt-[max(16px,env(safe-area-inset-top))]">
+    <main className="flex flex-col gap-6 px-5 pt-[calc(max(16px,env(safe-area-inset-top))+12px)]">
       <h1 className="pt-2 text-[28px] font-bold">설정</h1>
       <Group title="동기화">
         <Row icon={<ArrowPathIcon className="size-[18px]" />} iconClass={fresh ? "text-[#3FB98A]" : "text-[#F2A93B]"}

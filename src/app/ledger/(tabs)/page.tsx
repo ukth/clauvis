@@ -33,7 +33,7 @@ export default async function LedgerHomePage({ searchParams }: { searchParams: P
   const change = home.comparison.changePct;
 
   return (
-    <main className="flex flex-col gap-7 px-5 pt-[max(16px,env(safe-area-inset-top))]">
+    <main className="flex flex-col gap-7 px-5 pt-[calc(max(16px,env(safe-area-inset-top))+12px)]">
       <header className="flex items-center justify-between pt-2">
         <nav aria-label="월 이동" className="flex items-center gap-2">
           <Link href={`/ledger?month=${shiftMonth(month, -1)}`} aria-label="이전 달" className="text-[#8A93AD]">

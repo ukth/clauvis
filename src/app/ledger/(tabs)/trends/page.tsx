@@ -22,7 +22,7 @@ export default async function TrendsPage() {
     .sort((a, b) => b.currentTotal - a.currentTotal);
 
   return (
-    <main className="flex flex-col gap-6 px-5 pt-[max(16px,env(safe-area-inset-top))]">
+    <main className="flex flex-col gap-6 px-5 pt-[calc(max(16px,env(safe-area-inset-top))+12px)]">
       <h1 className="pt-2 text-[28px] font-bold">추이</h1>
 
       <Card title="월별 지출">

@@ -243,7 +243,7 @@ export function ChatView({ history, initialAttachment }: { history: ChatItem[]; 
 
   return (
     <main className="flex min-h-[calc(100dvh-96px)] flex-col">
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[#243055] bg-[#0A0F1E]/95 px-5 pb-3 pt-[max(16px,env(safe-area-inset-top))] backdrop-blur">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[#243055] bg-[#0A0F1E]/95 px-5 pb-3 pt-[calc(max(16px,env(safe-area-inset-top))+12px)] backdrop-blur">
         <div>
           <h1 className="text-xl font-bold">Clauvis</h1>
           <p className="text-xs text-[#8A93AD]">텔레그램과 같은 대화 기록</p>

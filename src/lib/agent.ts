@@ -20,7 +20,12 @@ import {
   deleteManualTransaction,
   excludeTransaction,
   includeTransaction,
+  updateManualTransaction,
+  listUserCards,
+  matchCard,
+  isManual,
   CATEGORIES,
+  type CardIdentity,
 } from "./ledger";
 
 const SYSTEM_PROMPT = `You are Clauvis, a todo and idea management assistant. Use the appropriate tools based on the user's message, or respond directly for casual conversation.
@@ -55,8 +60,12 @@ Spending ledger:
 - Replies to the digest refer to transactions, not todos — do not add todos for them unless explicitly asked.
 - The user may log spending in natural language (e.g. "엄마한테 30만원 계좌이체", "현금 만원 붕어빵") → call add_transaction (resolve relative times like "어제", "오늘 점심" to a KST ISO datetime with +09:00), then confirm in one short line with the assigned #number. Ask only if the amount is missing or ambiguous.
 - Use add_transaction ONLY for a completed past payment with an explicit amount and payee/description. Never for plans, reminders, questions, or hypotheticals ("내일 30만원 보내야 해", "얼마 썼지?") — use add_todo or reply directly instead.
-- A reply to the digest, or any message containing a #number, is a memo/category update (update_transaction_memo), never a new entry.
+- A reply to the digest, or any message containing a #number, is an update to that row (update_transaction_memo), never a new entry.
 - If the method is card, call list_transactions first; if a synced card row already matches (same amount, similar time/merchant), do NOT add it (it would be double-counted) and tell the user it is already recorded with its #number.
+- Card payments the sync missed (auto-debits like 통신비, etc.): pass card with the user's card name (e.g. "신한 T&Life", "현대 NOL") so it counts toward that card's totals and monthly target. Card names appear in [brackets] in list_transactions. If the user only says "신한카드" and they have one Shinhan card, use it.
+- Fix manual entries in place with update_transaction_memo (amount, merchant, occurred_at, method, card) — never delete and re-add to correct them, so the #number stays. Synced card rows only accept memo/category/settled_amount.
+- Split bills ("n빵", "친구랑 나눠 냄", "2만원 받았어", "정산받음"): set settled_amount on the original row = total paid back by others, so totals show only the user's share; card performance still counts the full charge. "친구랑 n빵" with no count means 2 people (settled = amount − round(amount/2)). If more money comes in later, set the new cumulative total. 0 clears it. Do it directly; ask only when the share truly cannot be inferred.
+- When the user's intent is clear, make the change right away and report the result; do not ask "바꿔드릴까요?" first.
 - If add_transaction reports a duplicate, do not retry; tell the user the existing #number.
 - delete_transaction only works for manually added entries; synced card transactions cannot be deleted. Call it only when the user names a #number or asks to undo the entry just added, and always echo the #number in the confirmation.
 - When the user asks to cancel/delete/remove a transaction ("지워", "삭제", "빼줘", "취소함"), act immediately — do not tell them to wait for a card cancellation: manual entries → delete_transaction; card rows (or if delete_transaction says it is a synced card transaction) → exclude_transaction, then say in one line that it was excluded from totals and can be restored. A later card-company cancellation SMS for an excluded charge is excluded automatically, so there is no double subtraction. "다시 넣어줘"/"복구" → include_transaction. Always echo the #number.
@@ -303,20 +312,26 @@ const toolDefinitions: Anthropic.Tool[] = [
   },
   {
     name: "update_transaction_memo",
-    description: "Set the memo and/or category of a card transaction by its #number.",
+    description: "Update a transaction by its #number. Any row: memo, category, settled_amount. Manual entries only: amount, merchant, occurred_at, method, card.",
     input_schema: {
       type: "object" as const,
       properties: {
         number: { type: "number", description: "Transaction #number" },
         memo: { type: "string", description: "Memo" },
         category: { type: "string", enum: [...CATEGORIES], description: "Category" },
+        settled_amount: { type: "number", description: "Total KRW others paid back for this charge (split bill); 0 clears. Must not exceed the amount" },
+        amount: { type: "number", description: "Manual entries only: new amount in KRW" },
+        merchant: { type: "string", description: "Manual entries only: new merchant/description" },
+        occurred_at: { type: "string", description: "Manual entries only: ISO datetime with +09:00 offset" },
+        method: { type: "string", enum: ["transfer", "cash", "card", "other"], description: "Manual entries only: payment method (clears any card)" },
+        card: { type: "string", description: "Manual entries only: the user's card name, e.g. 신한 T&Life" },
       },
       required: ["number"],
     },
   },
   {
     name: "add_transaction",
-    description: "Manually log a spending entry not captured by card sync (bank transfer, cash, etc.).",
+    description: "Manually log a spending entry not captured by card sync (bank transfer, cash, or a card charge the sync missed).",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -327,6 +342,7 @@ const toolDefinitions: Anthropic.Tool[] = [
           enum: ["transfer", "cash", "card", "other"],
           description: "Payment method: transfer(계좌이체, default), cash(현금), card, other",
         },
+        card: { type: "string", description: "For card payments: the user's card name (e.g. 신한 T&Life) so it counts toward that card. Overrides method" },
         occurred_at: { type: "string", description: "ISO datetime with +09:00 offset (default: now)" },
         category: { type: "string", enum: [...CATEGORIES], description: "Category (always set; pick the closest)" },
         memo: { type: "string", description: "Memo" },
@@ -875,6 +891,12 @@ const updateTransactionMemoInput = z.object({
   number: z.number().int().min(1),
   memo: z.string().max(1000).optional(),
   category: z.enum(CATEGORIES).optional(),
+  settled_amount: z.number().int().min(0).max(2147483647).optional(),
+  amount: z.number().int().min(1).max(2147483647).optional(),
+  merchant: z.string().min(1).max(100).optional(),
+  occurred_at: z.string().optional(),
+  method: z.enum(["transfer", "cash", "card", "other"]).optional(),
+  card: z.string().min(1).max(100).optional(),
 });
 
 function invalidInput(error: z.ZodError): string {
@@ -902,17 +924,71 @@ async function execSpendingSummary(userId: string, rawInput: unknown): Promise<s
 async function execUpdateTransactionMemo(userId: string, rawInput: unknown): Promise<string> {
   const parsed = updateTransactionMemoInput.safeParse(rawInput);
   if (!parsed.success) return invalidInput(parsed.error);
-  const { number, memo, category } = parsed.data;
-  if (memo === undefined && category === undefined) return "Provide memo or category.";
-  const updated = await updateTransactionMemo(userId, number, { memo, category });
-  if (!updated) return `Transaction #${number} not found.`;
-  return `Updated: ${formatTransactionLine(updated, { withDate: true })}`;
+  const { number, memo, category, settled_amount, amount, merchant, occurred_at, method, card } = parsed.data;
+  const coreEdit = amount !== undefined || merchant !== undefined || occurred_at !== undefined || method !== undefined || card !== undefined;
+  if (memo === undefined && category === undefined && settled_amount === undefined && !coreEdit) {
+    return "Provide at least one field to update.";
+  }
+
+  const [row] = await db.select().from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.number, number))).limit(1);
+  if (!row) return `Transaction #${number} not found.`;
+
+  let resolvedCard: CardIdentity | undefined;
+  let occurredAt: Date | undefined;
+  if (coreEdit) {
+    if (!isManual(row)) {
+      return `Transaction #${number} is a synced card transaction: amount, merchant, time and card come from the card company and cannot be changed. Use settled_amount for split bills, or memo.`;
+    }
+    if (card !== undefined) {
+      const found = await resolveCard(userId, card);
+      if (typeof found === "string") return found;
+      resolvedCard = found;
+    }
+    if (occurred_at !== undefined) {
+      const parsedAt = parseIsoWithOffset(occurred_at);
+      if (!parsedAt) return "Invalid occurred_at. Use ISO datetime with +09:00 offset (not in the future, not before 2000).";
+      occurredAt = parsedAt;
+    }
+  }
+  if (amount !== undefined && settled_amount === undefined && (row.settledAmount ?? 0) > amount) {
+    return `New amount ${amount} is below the existing settlement ${row.settledAmount}; also pass settled_amount.`;
+  }
+  if (settled_amount !== undefined && settled_amount > 0) {
+    if (row.status !== "approved") return `Transaction #${number} is not an approved charge; settlements apply to approved charges only.`;
+    const base = amount ?? row.amount;
+    if (base == null) return `Transaction #${number} has no KRW amount yet; cannot settle.`;
+    if (settled_amount > Math.abs(base)) return `settled_amount ${settled_amount} exceeds the charge amount ${Math.abs(base)}.`;
+  }
+
+  if (coreEdit) {
+    const result = await updateManualTransaction(userId, number, { amount, merchant, occurredAt, method, card: resolvedCard });
+    if (!result.ok) return `Transaction #${number} could not be updated (${result.reason}).`;
+  }
+  if (memo !== undefined || category !== undefined || settled_amount !== undefined) {
+    const updated = await updateTransactionMemo(userId, number, { memo, category, settledAmount: settled_amount });
+    if (!updated) return `Transaction #${number} not found.`;
+    return `Updated: ${formatTransactionLine(updated, { withDate: true })}`;
+  }
+  const [after] = await db.select().from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.number, number))).limit(1);
+  return after ? `Updated: ${formatTransactionLine(after, { withDate: true })}` : `Transaction #${number} not found.`;
+}
+
+/** Card the user named, or an error string listing their cards for the model to retry with. */
+async function resolveCard(userId: string, name: string): Promise<CardIdentity | string> {
+  const cards = await listUserCards(userId);
+  const match = matchCard(cards, name);
+  if (match) return match;
+  const names = cards.map((c) => c.cardName || c.cardOrg).join(", ") || "(none)";
+  return `Card "${name}" not found or ambiguous. The user's cards: ${names}. Retry with one of these names, or omit card.`;
 }
 
 const addTransactionInput = z.object({
   amount: z.number().int().min(1).max(2147483647),
   merchant: z.string().min(1).max(100),
   method: z.enum(["transfer", "cash", "card", "other"]).optional(),
+  card: z.string().min(1).max(100).optional(),
   occurred_at: z.string().optional(),
   category: z.enum(CATEGORIES).optional(),
   memo: z.string().max(1000).optional(),
@@ -925,10 +1001,16 @@ const deleteTransactionInput = z.object({
 async function execAddTransaction(userId: string, rawInput: unknown): Promise<string> {
   const parsed = addTransactionInput.safeParse(rawInput);
   if (!parsed.success) return invalidInput(parsed.error);
-  const { amount, merchant, method, occurred_at, category, memo } = parsed.data;
+  const { amount, merchant, method, card, occurred_at, category, memo } = parsed.data;
   const occurredAt = occurred_at ? parseIsoWithOffset(occurred_at) : undefined;
   if (occurredAt === null) return "Invalid occurred_at. Use ISO datetime with +09:00 offset (not in the future, not before 2000).";
-  const result = await addManualTransaction(userId, { amount, merchant, method, occurredAt, category, memo });
+  let resolvedCard: CardIdentity | undefined;
+  if (card !== undefined) {
+    const found = await resolveCard(userId, card);
+    if (typeof found === "string") return found;
+    resolvedCard = found;
+  }
+  const result = await addManualTransaction(userId, { amount, merchant, method, card: resolvedCard, occurredAt, category, memo });
   if (!result.ok) {
     return `Duplicate: not added. Same amount and merchant within 1 minute already exists: ${formatTransactionLine(result.existing, { withDate: true })}`;
   }
@@ -1161,7 +1243,16 @@ export type LedgerTxState = {
   memo: string | null;
   excluded: boolean;
   excludeReason: string | null;
+  // Optional: receipts saved before these were tracked lack them
+  settledAmount?: number | null;
+  amount?: number | null;
+  txMerchant?: string;
+  occurredAt?: string;
+  cardOrg?: string;
+  cardName?: string | null;
 };
+
+export const TRACKED_EXTRA_KEYS = ["settledAmount", "amount", "txMerchant", "occurredAt", "cardOrg", "cardName"] as const;
 
 /**
  * A ledger change made by the agent during one turn. Stored as a receipt row in chat_messages
@@ -1205,13 +1296,20 @@ async function readTxState(userId: string, number: number) {
     memo: row.memo,
     excluded: row.excludedAt != null,
     excludeReason: row.excludeReason,
+    settledAmount: row.settledAmount,
+    amount: row.amount,
+    txMerchant: row.merchant,
+    occurredAt: row.occurredAt.toISOString(),
+    cardOrg: row.cardOrg,
+    cardName: row.cardName,
   };
   return { row, state };
 }
 
 function sameState(a: LedgerTxState, b: LedgerTxState): boolean {
   return a.category === b.category && a.categorySource === b.categorySource && a.memo === b.memo
-    && a.excluded === b.excluded && a.excludeReason === b.excludeReason;
+    && a.excluded === b.excluded && a.excludeReason === b.excludeReason
+    && TRACKED_EXTRA_KEYS.every((key) => a[key] === b[key]);
 }
 
 /** Run a tool and, for ledger tools, record what changed so the web chat can show and undo it. */

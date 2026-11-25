@@ -3,8 +3,8 @@ import "server-only";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./db";
 import { chatMessages, transactions, type CategorySource } from "./db/schema";
-import { LEDGER_RECEIPT, type LedgerAgentAction, type LedgerReceipt, type LedgerTxState } from "./agent";
-import { deleteManualTransaction, formatWon, kstDateString, kstTimeString, MANUAL_CARD_ORG, type Transaction } from "./ledger";
+import { LEDGER_RECEIPT, TRACKED_EXTRA_KEYS, type LedgerAgentAction, type LedgerReceipt, type LedgerTxState } from "./agent";
+import { deleteManualTransaction, formatWon, isManual, kstDateString, kstTimeString, type Transaction } from "./ledger";
 
 // Web chat helpers: the chat shares chat_messages with the Telegram bot. An attached transaction
 // travels as a first-line tag so both the agent and a later history render can see it.
@@ -126,17 +126,43 @@ function parseReceipt(contentJson: string | null): LedgerReceipt | null {
 
 export type UndoResult = { ok: true } | { ok: false; error: string };
 
+const EXTRA_COLUMNS = {
+  settledAmount: transactions.settledAmount,
+  amount: transactions.amount,
+  txMerchant: transactions.merchant,
+  occurredAt: transactions.occurredAt,
+  cardOrg: transactions.cardOrg,
+  cardName: transactions.cardName,
+} as const;
+
+/** Restore the extra tracked fields (settlement, manual core fields) when the receipt recorded them. */
+function extraRevert(before: LedgerTxState, after: LedgerTxState) {
+  const set: Partial<typeof transactions.$inferInsert> = {};
+  const where = [];
+  for (const key of TRACKED_EXTRA_KEYS) {
+    if (before[key] === undefined || after[key] === undefined || before[key] === after[key]) continue;
+    const column = EXTRA_COLUMNS[key];
+    const field = key === "txMerchant" ? "merchant" : key;
+    const restore = key === "occurredAt" ? new Date(before[key] as string) : before[key];
+    Object.assign(set, { [field]: restore });
+    where.push(key === "occurredAt"
+      ? sql`${column} is not distinct from ${after[key]}::timestamptz`
+      : sql`${column} is not distinct from ${after[key]}`);
+  }
+  return { set, where };
+}
+
 async function revertAction(userId: string, action: LedgerAgentAction): Promise<UndoResult> {
   if (action.kind === "add") {
     const tx = await findUserTransaction(userId, action.number);
-    if (!tx || tx.cardOrg !== MANUAL_CARD_ORG) return { ok: false, error: "이미 지워졌거나 되돌릴 수 없는 내역이에요." };
+    if (!tx || !isManual(tx)) return { ok: false, error: "이미 지워졌거나 되돌릴 수 없는 내역이에요." };
     const result = await deleteManualTransaction(userId, action.number);
     return result.ok ? { ok: true } : { ok: false, error: "되돌리지 못했어요." };
   }
 
   if (action.kind === "delete") {
     const snap = action.snapshot;
-    if (snap.userId !== userId || snap.cardOrg !== MANUAL_CARD_ORG) return { ok: false, error: "되돌릴 수 없는 내역이에요." };
+    if (snap.userId !== userId || !isManual(snap)) return { ok: false, error: "되돌릴 수 없는 내역이에요." };
     // JSON turned the timestamps into strings; the same #number and externalId come back
     const inserted = await db
       .insert(transactions)
@@ -155,6 +181,7 @@ async function revertAction(userId: string, action: LedgerAgentAction): Promise<
   // Edits are restored only if the row still looks exactly like the agent left it, so a later
   // manual edit is never silently overwritten (single conditional UPDATE).
   const { before, after } = action;
+  const extra = extraRevert(before, after);
   const restored = await db
     .update(transactions)
     .set({
@@ -163,6 +190,7 @@ async function revertAction(userId: string, action: LedgerAgentAction): Promise<
       memo: before.memo,
       excludedAt: before.excluded ? sql`coalesce(${transactions.excludedAt}, now())` : null,
       excludeReason: before.excludeReason,
+      ...extra.set,
       updatedAt: new Date(),
     })
     .where(and(
@@ -173,6 +201,7 @@ async function revertAction(userId: string, action: LedgerAgentAction): Promise<
       sql`${transactions.memo} is not distinct from ${after.memo}`,
       sql`${transactions.excludeReason} is not distinct from ${after.excludeReason}`,
       after.excluded ? sql`${transactions.excludedAt} is not null` : sql`${transactions.excludedAt} is null`,
+      ...extra.where,
     ))
     .returning({ number: transactions.number });
   return restored.length === 1 ? { ok: true } : { ok: false, error: "그 사이 내용이 바뀌어서 되돌리지 않았어요." };

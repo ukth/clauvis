@@ -147,6 +147,9 @@ export const transactions = pgTable("transactions", {
   categorySource: text("category_source").$type<CategorySource>(),
   items: jsonb("items").$type<TransactionItem[]>(),
   memo: text("memo"),
+  // Amount paid back by others (split bills): lowers spending totals but not card performance.
+  // Never touched by the sync upsert so it survives re-sync.
+  settledAmount: integer("settled_amount"),
   // User-controlled exclusion from totals; never touched by the sync upsert so it survives re-sync
   excludedAt: timestamp("excluded_at", { withTimezone: true }),
   excludeReason: text("exclude_reason"),

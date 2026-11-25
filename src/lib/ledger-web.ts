@@ -5,7 +5,7 @@ import { db } from "./db";
 import { transactions, users, webSessions, type TransactionItem } from "./db/schema";
 import { requireLedgerSession } from "./ledger-auth";
 import {
-  approvedCount, getTransactionsInRange, isCategory, isExcluded, isValidMonth,
+  approvedCount, getTransactionsInRange, isCategory, isExcluded, isManual, isValidMonth,
   kstDateString, kstDayOfMonth, kstMonthRange, kstMonthString,
   kstMonthToDateRanges, previousMonth, SHINHAN_THRESHOLD, signedAmount,
   summarizeMonth, summarizeRange, sumNet,
@@ -31,6 +31,8 @@ export interface LedgerTransaction {
   excluded: boolean;
   excludedAt: string | null;
   excludeReason: string | null;
+  settledAmount: number | null;
+  manual: boolean;
 }
 
 export interface LedgerCardPerformance extends SummaryBucket {
@@ -123,6 +125,8 @@ function toTransaction(row: Transaction): LedgerTransaction {
     excluded: isExcluded(row),
     excludedAt: row.excludedAt?.toISOString() ?? null,
     excludeReason: row.excludeReason,
+    settledAmount: row.settledAmount,
+    manual: isManual(row),
   };
 }
 

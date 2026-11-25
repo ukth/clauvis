@@ -165,6 +165,19 @@ export async function POST(request: NextRequest) {
     // auto-exclude it when an excluded approved row matches (same card org + amount, within 120 days before).
     const cancelIds = incoming.filter((tx) => tx.status === "cancelled").map((tx) => tx.externalId);
     if (cancelIds.length > 0) {
+      // A refunded charge voids its split-bill settlement; otherwise the cancel (-amount) would
+      // subtract more than the settled original (+my share) added.
+      await db.execute(sql`
+        UPDATE transactions AS o
+        SET settled_amount = NULL, updated_at = now()
+        FROM transactions AS c
+        WHERE c.user_id = ${userId}
+          AND c.external_id IN (${sql.join(cancelIds.map((id) => sql`${id}`), sql`, `)})
+          AND c.status = 'cancelled' AND c.amount IS NOT NULL
+          AND o.user_id = c.user_id AND o.status = 'approved' AND o.settled_amount IS NOT NULL
+          AND o.card_org = c.card_org AND o.amount = c.amount
+          AND o.occurred_at <= c.occurred_at AND o.occurred_at > c.occurred_at - interval '120 days'
+      `);
       await db.execute(sql`
         UPDATE transactions AS c
         SET excluded_at = now(), exclude_reason = '원거래 #' || o.number || ' 제외됨'

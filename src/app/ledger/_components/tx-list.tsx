@@ -29,7 +29,7 @@ function TxRow({ tx, onOpen, detailed }: { tx: LedgerTransaction; onOpen: () => 
           </p>
           <p className="flex min-w-0 items-center gap-1.5 text-xs text-[#8A93AD]">
             <CategoryTag tx={tx} />
-            <span className="truncate">{cardOf(tx)} · {kstTime(tx.occurredAt)}</span>
+            <span className="truncate">{cardOf(tx)} · {kstTime(tx.occurredAt)}{tx.settledAmount ? ` · 정산 ${won(tx.settledAmount)}` : ""}</span>
           </p>
         </div>
         <span className={`shrink-0 text-[15px] font-semibold tabular-nums ${tx.status === "cancelled" ? "text-[#3FB98A]" : ""} ${tx.excluded ? "line-through" : ""} ${tx.status === "declined" ? "text-[#8A93AD] line-through" : ""}`}>

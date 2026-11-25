@@ -20,11 +20,21 @@ export function won(amount: number): string {
   return `${amount.toLocaleString("ko-KR")}원`;
 }
 
-/** Signed display amount: spending as "-3,700원", cancellations as "+3,700원". */
-export function txAmount(tx: { amount: number | null; originalAmount: string | null; currency: string; status: string }): string {
-  if (tx.amount == null) return tx.originalAmount ? `${tx.originalAmount} ${tx.currency}` : "금액 미상";
+type AmountFields = { amount: number | null; originalAmount: string | null; currency: string; status: string; settledAmount?: number | null };
+
+/** My share after split-bill settlement (approved rows); otherwise the charged amount. */
+export function txShare(tx: AmountFields): number | null {
+  if (tx.amount == null) return null;
+  const charged = Math.abs(tx.amount);
+  return tx.status === "approved" ? Math.max(0, charged - (tx.settledAmount ?? 0)) : charged;
+}
+
+/** Signed display amount: spending as "-3,700원" (my share if settled), cancellations as "+3,700원". */
+export function txAmount(tx: AmountFields): string {
+  const share = txShare(tx);
+  if (share == null) return tx.originalAmount ? `${tx.originalAmount} ${tx.currency}` : "금액 미상";
   const sign = tx.status === "cancelled" ? "+" : "-";
-  return `${sign}${Math.abs(tx.amount).toLocaleString("ko-KR")}원`;
+  return `${sign}${share.toLocaleString("ko-KR")}원`;
 }
 
 /** Month bar labels in whole 만원 units, e.g. 1,420,000 → "142만". */

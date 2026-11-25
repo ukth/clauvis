@@ -1,7 +1,7 @@
 import { getLedgerTransactions, type LedgerTransactionFilters } from "@/lib/ledger-web";
 import { isCategory, isValidMonth, kstDateString, kstMonthString, type Category } from "@/lib/ledger";
 import { requirePageSession } from "../../_components/session";
-import { cardOf, dayLabel, kstDate, won } from "../../_components/format";
+import { cardOf, dayLabel, kstDate, txShare, won } from "../../_components/format";
 import { TxList, type TxGroup } from "../../_components/tx-list";
 import { ListFilters } from "./list-filters";
 
@@ -34,9 +34,9 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     const date = kstDate(tx.occurredAt);
     const group = byDay.get(date) ?? { key: date, label: dayLabel(date, today), total: 0, transactions: [] };
     group.transactions.push(tx);
-    // Same rule as signedAmount: approved adds, cancelled subtracts, regardless of the stored sign
-    if (!tx.excluded && tx.amount != null) {
-      const amount = Math.abs(tx.amount);
+    // Same rule as signedAmount: approved adds (my share), cancelled subtracts, regardless of the stored sign
+    const amount = txShare(tx);
+    if (!tx.excluded && amount != null) {
       group.total = (group.total ?? 0) + (tx.status === "approved" ? amount : tx.status === "cancelled" ? -amount : 0);
     }
     byDay.set(date, group);

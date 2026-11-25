@@ -141,10 +141,18 @@ export async function listTransactions(
 export async function updateTransactionMemo(
   userId: string,
   number: number,
-  input: { memo?: string | null; category?: string | null; excluded?: boolean; excludeReason?: string | null }
+  input: {
+    memo?: string | null;
+    category?: string | null;
+    excluded?: boolean;
+    excludeReason?: string | null;
+    settledAmount?: number | null;
+  }
 ): Promise<Transaction | null> {
   const updateData: PgUpdateSetSource<typeof transactions> = { updatedAt: new Date() };
   if (input.memo !== undefined) updateData.memo = input.memo;
+  // 0 clears the settlement
+  if (input.settledAmount !== undefined) updateData.settledAmount = input.settledAmount || null;
   if (input.category !== undefined) {
     updateData.category = input.category;
     updateData.categorySource = "user";
@@ -206,12 +214,55 @@ export const MANUAL_METHOD_LABELS = {
 
 export type ManualMethod = keyof typeof MANUAL_METHOD_LABELS;
 
+export type CardIdentity = { cardOrg: string; cardName: string | null };
+
+const MANUAL_EXTERNAL_PREFIX = "manual:";
+
+/** Entered by hand (Telegram/web/MCP) rather than synced; such rows may be edited and deleted freely. */
+export function isManual(tx: Pick<Transaction, "externalId">): boolean {
+  return tx.externalId.startsWith(MANUAL_EXTERNAL_PREFIX);
+}
+
+/** Cards seen in synced rows (newest first), so manual entries can be filed under a real card. */
+export async function listUserCards(userId: string): Promise<CardIdentity[]> {
+  const rows = await db
+    .select({ cardOrg: transactions.cardOrg, cardName: transactions.cardName, last: sql<Date>`max(${transactions.occurredAt})` })
+    .from(transactions)
+    .where(and(
+      eq(transactions.userId, userId),
+      sql`${transactions.externalId} not like ${`${MANUAL_EXTERNAL_PREFIX}%`}`,
+      sql`${transactions.cardOrg} <> ${MANUAL_CARD_ORG}`,
+    ))
+    .groupBy(transactions.cardOrg, transactions.cardName)
+    .orderBy(desc(sql`max(${transactions.occurredAt})`));
+  return rows.map(({ cardOrg, cardName }) => ({ cardOrg, cardName }));
+}
+
+/** Resolve a card the user named ("신한 T&Life", "nol") against their synced cards; null if none or ambiguous. */
+export function matchCard(cards: CardIdentity[], name: string): CardIdentity | null {
+  const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, "");
+  const query = normalize(name);
+  if (!query) return null;
+  const label = (card: CardIdentity) => normalize(card.cardName || card.cardOrg);
+  const exact = cards.filter((card) => label(card) === query);
+  if (exact.length === 1) return exact[0];
+  const partial = cards.filter((card) => label(card).includes(query) || query.includes(label(card)));
+  return partial.length === 1 ? partial[0] : null;
+}
+
+function manualCardFields(input: { method?: ManualMethod; card?: CardIdentity | null }): CardIdentity {
+  if (input.card) return { cardOrg: input.card.cardOrg, cardName: input.card.cardName };
+  return { cardOrg: MANUAL_CARD_ORG, cardName: MANUAL_METHOD_LABELS[input.method ?? "transfer"] };
+}
+
 export async function addManualTransaction(
   userId: string,
   input: {
     amount: number;
     merchant: string;
     method?: ManualMethod;
+    // A real card (from listUserCards) takes precedence over method, so the entry counts toward that card
+    card?: CardIdentity | null;
     occurredAt?: Date;
     category?: string | null;
     memo?: string | null;
@@ -243,17 +294,52 @@ export async function addManualTransaction(
       amount: input.amount,
       currency: "KRW",
       merchant: input.merchant,
-      cardOrg: MANUAL_CARD_ORG,
-      cardName: MANUAL_METHOD_LABELS[input.method ?? "transfer"],
+      ...manualCardFields(input),
       installmentMonths: 0,
       status: "approved",
       category: input.category ?? null,
       categorySource: input.category != null ? "user" : null,
       memo: input.memo ?? null,
-      externalId: `manual:${crypto.randomUUID()}`,
+      externalId: `${MANUAL_EXTERNAL_PREFIX}${crypto.randomUUID()}`,
     })
     .returning();
   return { ok: true, tx: created };
+}
+
+/** Edit the core fields of a manual entry in place (same #number). Synced rows are owned by the card sync. */
+export async function updateManualTransaction(
+  userId: string,
+  number: number,
+  input: {
+    amount?: number;
+    merchant?: string;
+    occurredAt?: Date;
+    method?: ManualMethod;
+    card?: CardIdentity | null;
+  }
+): Promise<{ ok: true; tx: Transaction } | { ok: false; reason: "not_found" | "not_manual" }> {
+  const updateData: PgUpdateSetSource<typeof transactions> = { updatedAt: new Date() };
+  if (input.amount !== undefined) updateData.amount = input.amount;
+  if (input.merchant !== undefined) updateData.merchant = input.merchant;
+  if (input.occurredAt !== undefined) updateData.occurredAt = input.occurredAt;
+  if (input.card || input.method) Object.assign(updateData, manualCardFields(input));
+
+  const [updated] = await db
+    .update(transactions)
+    .set(updateData)
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.number, number),
+      sql`${transactions.externalId} like ${`${MANUAL_EXTERNAL_PREFIX}%`}`,
+    ))
+    .returning();
+  if (updated) return { ok: true, tx: updated };
+  const [row] = await db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.number, number)))
+    .limit(1);
+  return { ok: false, reason: row ? "not_manual" : "not_found" };
 }
 
 /** Delete a manually entered transaction. Synced card rows cannot be deleted (the Mac sync would re-create them). */
@@ -266,7 +352,7 @@ export async function deleteManualTransaction(
     .where(and(
       eq(transactions.userId, userId),
       eq(transactions.number, number),
-      eq(transactions.cardOrg, MANUAL_CARD_ORG),
+      sql`${transactions.externalId} like ${`${MANUAL_EXTERNAL_PREFIX}%`}`,
     ))
     .returning();
   if (deleted) return { ok: true, tx: deleted };
@@ -302,12 +388,24 @@ export function isExcluded(tx: Transaction): boolean {
   return tx.excludedAt != null;
 }
 
-/** Signed KRW contribution of a transaction: approved adds, cancelled subtracts; declined, unknown, and user-excluded rows count 0. */
-export function signedAmount(tx: Transaction): number {
+/** Signed KRW charge as the card company sees it (card performance): approved adds, cancelled subtracts; declined, unknown, and user-excluded rows count 0. */
+export function grossSignedAmount(tx: Transaction): number {
   if (tx.amount == null || isExcluded(tx)) return 0;
   if (tx.status === "approved") return Math.abs(tx.amount);
   if (tx.status === "cancelled") return -Math.abs(tx.amount);
   return 0;
+}
+
+/** My share of an approved charge after others paid me back. */
+export function netAmount(tx: Pick<Transaction, "amount" | "settledAmount">): number | null {
+  if (tx.amount == null) return null;
+  return Math.max(0, Math.abs(tx.amount) - (tx.settledAmount ?? 0));
+}
+
+/** Signed KRW contribution to spending totals: like grossSignedAmount, minus any settlement on approved rows. */
+export function signedAmount(tx: Transaction): number {
+  const gross = grossSignedAmount(tx);
+  return gross > 0 ? (netAmount(tx) ?? 0) : gross;
 }
 
 function cardLabel(tx: Transaction): string {
@@ -319,12 +417,16 @@ function isShinhan(tx: Transaction): boolean {
   return text.includes("shinhan") || text.includes("신한");
 }
 
-function bucketize(rows: Transaction[], keyOf: (tx: Transaction) => string): SummaryBucket[] {
+function bucketize(
+  rows: Transaction[],
+  keyOf: (tx: Transaction) => string,
+  amountOf: (tx: Transaction) => number = signedAmount,
+): SummaryBucket[] {
   const map = new Map<string, SummaryBucket>();
   for (const tx of rows) {
     const key = keyOf(tx);
     const bucket = map.get(key) ?? { key, total: 0, count: 0 };
-    bucket.total += signedAmount(tx);
+    bucket.total += amountOf(tx);
     if (tx.status === "approved" && !isExcluded(tx)) bucket.count += 1;
     map.set(key, bucket);
   }
@@ -364,9 +466,10 @@ export async function summarizeMonth(userId: string, month: string): Promise<Mon
     cancelledCount: counted.filter((tx) => tx.status === "cancelled").length,
     unconvertedCount: counted.filter((tx) => tx.amount == null).length,
     byCategory: bucketize(counted, (tx) => tx.category || "미분류"),
-    byCard: bucketize(counted, cardLabel),
+    // Cards show what was charged to them (card performance), ignoring split-bill settlements
+    byCard: bucketize(counted, cardLabel, grossSignedAmount),
     topMerchants: bucketize(counted, (tx) => tx.merchant).slice(0, 5),
-    shinhanTotal: shinhanRows.length > 0 ? sumNet(shinhanRows) : null,
+    shinhanTotal: shinhanRows.length > 0 ? shinhanRows.reduce((acc, tx) => acc + grossSignedAmount(tx), 0) : null,
     previous: { month: prevMonth, total: prevTotal },
     changePct: prevTotal > 0 ? Math.round(((total - prevTotal) / prevTotal) * 1000) / 10 : null,
   };
@@ -379,6 +482,9 @@ export function formatWon(amount: number): string {
 }
 
 function formatTxAmount(tx: Transaction): string {
+  if (tx.amount != null && tx.settledAmount) {
+    return `${formatWon(tx.amount)} (정산 ${formatWon(tx.settledAmount)} → 내 몫 ${formatWon(netAmount(tx) ?? 0)})`;
+  }
   if (tx.amount != null) return formatWon(tx.amount);
   if (tx.originalAmount) return `${tx.originalAmount} ${tx.currency}`;
   return "금액 미상";

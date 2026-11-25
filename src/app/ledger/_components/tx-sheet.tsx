@@ -45,7 +45,7 @@ export function TxSheet({ tx, onClose }: { tx: LedgerTransaction; onClose: () =>
   const [excluded, setExcluded] = useState(tx.excluded);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const manual = tx.cardOrg === "manual";
+  const manual = tx.manual;
   const aiGuess = tx.categorySource === "ai" && category === tx.category;
 
   const save = async () => {
@@ -99,6 +99,11 @@ export function TxSheet({ tx, onClose }: { tx: LedgerTransaction; onClose: () =>
           <h2 className="truncate text-[22px] font-bold">{tx.merchant}</h2>
           <p className="shrink-0 text-[22px] font-bold tabular-nums">{txAmount(tx)}</p>
         </div>
+        {tx.settledAmount && tx.amount != null ? (
+          <p className="text-right text-xs text-[#8A93AD]">
+            결제 {won(Math.abs(tx.amount))} · 정산 {won(tx.settledAmount)} · 카드 실적은 전액
+          </p>
+        ) : null}
       </header>
 
       {tx.items?.length ? (

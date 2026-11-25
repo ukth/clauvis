@@ -59,6 +59,13 @@ function describe(action: ChatActionCard): { title: string; detail: string | nul
   if (before.excluded !== after.excluded) parts.push(after.excluded ? "합계에서 제외" : "합계에 다시 포함");
   if (before.category !== after.category) parts.push(`분류 ${before.category ?? "미분류"} → ${after.category ?? "미분류"}`);
   if (before.memo !== after.memo) parts.push(after.memo ? `메모: ${after.memo}` : "메모 삭제");
+  if (before.settledAmount !== after.settledAmount && after.settledAmount !== undefined) {
+    parts.push(after.settledAmount ? `정산 ${won(after.settledAmount)}` : "정산 삭제");
+  }
+  if (before.amount !== after.amount && after.amount != null) parts.push(`금액 ${won(Math.abs(after.amount))}`);
+  if (before.txMerchant !== after.txMerchant && after.txMerchant) parts.push(`가맹점 ${after.txMerchant}`);
+  if (before.cardName !== after.cardName && after.cardName !== undefined) parts.push(`결제 ${after.cardName ?? after.cardOrg}`);
+  if (before.occurredAt !== after.occurredAt && after.occurredAt) parts.push("시각 변경");
   return { title: `${head} · ${after.excluded && !before.excluded ? "제외됨" : "수정됨"}`, detail: parts.join(" · ") || null };
 }
 
